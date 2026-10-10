@@ -69,14 +69,17 @@ def resolve_dc_ip(domain: Optional[str], dc_ip: Optional[str]) -> str:
     return dc_ip
 
 
-def connect_to_dc(dc_ip: str, username: str, password: str, skip_login_manager: bool, force_ucs_dns: bool) -> ArchJoiner:
+def connect_to_dc(
+    dc_ip: str, username: str, password: str, skip_login_manager: bool, force_ucs_dns: bool,
+    mount_home: Optional[bool] = None,
+) -> ArchJoiner:
     if not check_if_ssh_works_with_given_account(dc_ip, username, password):
         raise DomainJoinException(
             'Could not log in to %s via SSH as %s. Check the credentials and that SSH is reachable.' % (dc_ip, username)
         )
     userinfo_logger.info('Fetching domain configuration from the domain controller')
     ucr_variables = get_ucr_variables_from_dc(dc_ip, username, password)
-    return ArchJoiner(ucr_variables, username, password, dc_ip, skip_login_manager, force_ucs_dns)
+    return ArchJoiner(ucr_variables, username, password, dc_ip, skip_login_manager, force_ucs_dns, mount_home)
 
 
 def run_join(joiner: ArchJoiner) -> None:

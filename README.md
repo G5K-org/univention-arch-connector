@@ -29,7 +29,8 @@ When you join a client to the domain, the tool:
 - backs up every file it touches before changing it, and restores them
   automatically if the join fails part-way
 
-After joining, it can also mount UCS file shares at login (see below).
+Optionally, it mounts each user's network home and chosen UCS file shares
+at login (see below).
 
 ## Status
 
@@ -124,12 +125,21 @@ sudo univention-arch-connector-cli --remove-shares
 ```
 
 Chosen shares are mounted for all domain users under `~/Freigaben/<name>`
-at login and unmounted at logout. Users with a home share in UCS
-(`sambahome`) also get it mounted. Mounting uses the user's own Kerberos
+at login and unmounted at logout. Mounting uses the user's own Kerberos
 ticket, so no passwords are stored, and the file server enforces each
 user's permissions. The shares are read from UCS when you run
-`--setup-shares`; run it again after adding shares or home shares in UCS.
-In the graphical assistant, use "Network shares…".
+`--setup-shares`; run it again after adding shares in UCS. In the graphical
+assistant, use "Network shares…".
+
+### Network home
+
+Join with `--mount-home` (GUI: "Mount each user's network home at
+~/Freigaben/Home") to mount each domain user's home from the server at
+`~/Freigaben/Home` at login - the one Windows clients get as their home
+drive (UCS' `samba/homedirserver` and `samba/homedirpath`, e.g.
+`\\dc\<user>`), or a user's own home share if UCS sets one (`sambahome`).
+The local home directory stays as it is. A re-join keeps the setting;
+`--no-mount-home` turns it off. Needs the same packages as shares.
 
 Run `univention-arch-connector-cli --help` for all options. The graphical
 assistant `univention-arch-connector-gui` (started via the "Univention

@@ -17,6 +17,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from univention_arch_connector import shares
 from univention_arch_connector.distributions import AbstractJoiner, DcResolveException, DomainJoinException
 from univention_arch_connector.join_steps.dns_configurator import DnsConfigurator
 from univention_arch_connector.join_steps.kerberos_configurator import KerberosConfigurator
@@ -42,6 +43,9 @@ UCR_SCALAR_VARIABLES = [
     'ldap/base',
     'ldap/server/name',
     'kerberos/realm',
+    # Where Windows clients find the user's network home (--mount-home).
+    'samba/homedirserver',
+    'samba/homedirpath',
 ]
 UCR_NAMESERVER_VARIABLES = ['nameserver1', 'nameserver2', 'nameserver3']
 UCR_REQUIRED_VARIABLES = ['domainname', 'ldap/master', 'ldap/base', 'kerberos/realm']
@@ -113,8 +117,11 @@ class ArchJoiner(AbstractJoiner):
         dc_ip: str,
         skip_login_manager: bool,
         force_ucs_dns: bool,
+        mount_home: Optional[bool] = None,
     ) -> None:
         super().__init__(ucr_variables, admin_username, admin_pw, dc_ip, skip_login_manager, force_ucs_dns)
+        # None: keep what a previous join set up.
+        self.mount_home = mount_home
 
         self.domain = ucr_variables['domainname']
         self.nameservers: List[str] = [
@@ -124,6 +131,10 @@ class ArchJoiner(AbstractJoiner):
         self.ldap_base = ucr_variables['ldap/base']
         self.ldap_server_name = ucr_variables.get('ldap/server/name') or self.ldap_master
         self.kerberos_realm = ucr_variables['kerberos/realm']
+        self.home_server, self.home_path = shares.samba_home_location(
+            ucr_variables.get('samba/homedirserver', ''), ucr_variables.get('samba/homedirpath', ''),
+            self.domain, self.ldap_server_name,
+        )
 
         self.dns_configurator = DnsConfigurator()
         self.ldap_configurator = LdapConfigurator()
@@ -178,6 +189,8 @@ class ArchJoiner(AbstractJoiner):
 
     def check_if_join_is_possible_without_problems(self) -> None:
         self.login_manager_configurator.check_for_conflicts(self.skip_login_manager)
+        if self.mount_home:
+            shares.check_requirements()
 
     @execute_as_root
     def create_backup_of_config_files(self) -> None:
@@ -190,6 +203,7 @@ class ArchJoiner(AbstractJoiner):
         self.nsswitch_configurator.backup(self.backup)
         self.login_manager_configurator.backup(self.backup, self.skip_login_manager)
         self.kerberos_configurator.backup(self.backup)
+        self.backup.backup_file(str(shares.PAM_MOUNT_CONF))
         self.backup.write_manifest()
         prune_old_backups()
         userinfo_logger.info('Backup of changed configuration files: %s', self.backup.backup_dir)
@@ -227,6 +241,10 @@ class ArchJoiner(AbstractJoiner):
             self.pam_configurator.setup_pam()
             if not self.skip_login_manager:
                 self.login_manager_configurator.enable_login_with_foreign_usernames()
+            if self.mount_home or (self.mount_home is None and shares.home_mount_enabled()):
+                shares.setup_home_mount(self.home_server, self.home_path)
+            elif self.mount_home is False:
+                shares.remove_home_mount()
             self.kerberos_configurator.configure_kerberos(
                 self.kerberos_realm, self.ldap_master, self.ldap_server_name, self.is_samba_dc, self.dc_ip,
             )

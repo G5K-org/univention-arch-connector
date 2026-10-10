@@ -66,7 +66,7 @@ class JoinWorker(QObject):
     host_key_confirmation_requested = pyqtSignal(str, list)
 
     def __init__(self, username: str, password: str, domain: str, dc_ip: str, dc_fingerprint: str,
-                 skip_login_manager: bool, force_ucs_dns: bool) -> None:
+                 skip_login_manager: bool, force_ucs_dns: bool, mount_home: bool) -> None:
         super().__init__()
         self.username = username
         self.password = password
@@ -75,6 +75,7 @@ class JoinWorker(QObject):
         self.dc_fingerprint = dc_fingerprint
         self.skip_login_manager = skip_login_manager
         self.force_ucs_dns = force_ucs_dns
+        self.mount_home = mount_home
         self.host_key_accepted = False
 
     def confirm_host_key(self, dc_ip: str, fingerprints: List[str]) -> bool:
@@ -86,7 +87,9 @@ class JoinWorker(QObject):
             check_system()
             dc_ip = resolve_dc_ip(self.domain, self.dc_ip)
             pin_host_keys(dc_ip, self.dc_fingerprint or None, self.confirm_host_key)
-            joiner = connect_to_dc(dc_ip, self.username, self.password, self.skip_login_manager, self.force_ucs_dns)
+            joiner = connect_to_dc(
+                dc_ip, self.username, self.password, self.skip_login_manager, self.force_ucs_dns, self.mount_home,
+            )
             run_join(joiner)
         except Exception as exc:
             debug_logger.exception('Domain join failed')
@@ -105,7 +108,7 @@ LOGIN_LIST_LABELS = {
 class SharesDialog(QDialog):
     """Choose which UCS shares are mounted at login."""
 
-    def __init__(self, parent: QDialog, available: List[shares.Share], configured: List[str], home_count: int) -> None:
+    def __init__(self, parent: QDialog, available: List[shares.Share], configured: List[str], home_mounted: bool) -> None:
         super().__init__(parent)
         self.setWindowTitle('Network shares')
         layout = QVBoxLayout()
@@ -120,7 +123,7 @@ class SharesDialog(QDialog):
         if not available:
             layout.addWidget(QLabel('No shares are defined in UCS.'))
         layout.addWidget(QLabel(
-            '%d user(s) have a home share in UCS; it is mounted for them automatically.' % (home_count,)
+            'Home directories: %s (set when joining).' % ('mounted at %s' % (shares.HOME_MOUNTPOINT,) if home_mounted else 'not mounted',)
         ))
         save_button = QPushButton('Save')
         save_button.clicked.connect(self.accept)
@@ -153,6 +156,8 @@ class DomainJoinDialog(QDialog):
         self.dc_fingerprint_edit.setPlaceholderText('SHA256:... - asked to confirm if left empty')
         self.skip_login_manager_checkbox = QCheckBox("Don't configure the login manager")
         self.force_ucs_dns_checkbox = QCheckBox("Point this system's DNS at the domain controller")
+        self.mount_home_checkbox = QCheckBox("Mount each user's network home at %s" % (shares.HOME_MOUNTPOINT,))
+        self.mount_home_checkbox.setChecked(shares.home_mount_enabled())
         self.login_list_combo = QComboBox()
         for mode, label in LOGIN_LIST_LABELS.items():
             self.login_list_combo.addItem(label, mode)
@@ -171,6 +176,7 @@ class DomainJoinDialog(QDialog):
         form.addRow('DC SSH host key fingerprint (optional):', self.dc_fingerprint_edit)
         form.addRow(self.skip_login_manager_checkbox)
         form.addRow(self.force_ucs_dns_checkbox)
+        form.addRow(self.mount_home_checkbox)
         form.addRow('Login screen lists:', self.login_list_combo)
 
         self.log_view = QPlainTextEdit()
@@ -229,6 +235,7 @@ class DomainJoinDialog(QDialog):
             self.dc_fingerprint_edit.text().strip(),
             self.skip_login_manager_checkbox.isChecked(),
             self.force_ucs_dns_checkbox.isChecked(),
+            self.mount_home_checkbox.isChecked(),
         )
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
@@ -257,12 +264,12 @@ class DomainJoinDialog(QDialog):
         try:
             available = shares.list_shares()
             configured = shares.configured_share_names()
-            home_count = len(shares.list_home_shares())
+            home_mounted = shares.home_mount_enabled()
         except Exception as exc:
             debug_logger.exception('Listing shares failed')
             QMessageBox.critical(self, 'Network shares', 'Could not read the shares from UCS: %s' % (exc,))
             return
-        dialog = SharesDialog(self, available, configured, home_count)
+        dialog = SharesDialog(self, available, configured, home_mounted)
         if not dialog.exec_():
             return
         try:

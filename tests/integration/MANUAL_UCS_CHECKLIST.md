@@ -106,19 +106,24 @@ LDAP, login manager behavior at the greeter) needs a real lab setup.
 
 Needs a VM or privileged container: unprivileged containers can't mount
 CIFS. Install `cifs-utils pam_mount keyutils`, create a share in UMC and,
-for one test user, a home share (`sambahome`).
+for one test user, a home share (`sambahome`) for step 12.
 
 11. `--list-shares` lists the UCS shares; `--setup-shares <name>` sets one up.
     - [ ] Logging in as a domain user mounts it at `~/Freigaben/<name>`
       without asking for a password, using the user's ticket
       (`/tmp/krb5cc_<uid>`); `ls` shows the files, writing respects the
       user's permissions in UCS.
-    - [ ] The test user's home share is mounted too.
     - [ ] A local user's login mounts nothing and isn't slowed down.
     - [ ] Logging out unmounts the shares.
     - [ ] `--remove-shares` and `--leave-domain` remove the volumes from
       `/etc/security/pam_mount.conf.xml` and `pam_mount` from
       `/etc/pam.d/system-login`.
+12. Join with `--mount-home`.
+    - [ ] At login, `~/Freigaben/Home` holds the user's home from the server
+      (`\\<samba/homedirserver>\<user>`), also when logging in as
+      `user@domain`; a user with their own `sambahome` gets that one.
+    - [ ] A re-join without the option keeps it; `--no-mount-home` and
+      `--leave-domain` remove it.
 
 ## GUI
 

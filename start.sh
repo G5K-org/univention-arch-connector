@@ -59,7 +59,7 @@ fi
 
 wanted=("${base_packages[@]}")
 [[ $mode == gui ]] && wanted+=("${gui_packages[@]}")
-[[ " $* " == *" --setup-shares "* ]] && wanted+=("${share_packages[@]}")
+[[ $mode == gui || " $* " == *" --setup-shares "* || " $* " == *" --mount-home "* ]] && wanted+=("${share_packages[@]}")
 mapfile -t missing < <(pacman -T "${wanted[@]}" || true)
 if [[ ${#missing[@]} -gt 0 ]]; then
     echo "Missing packages: ${missing[*]}"

@@ -200,6 +200,14 @@ class PamConfigurator:
         )
 
     @execute_as_root
+    def pam_mount_enabled(self) -> bool:
+        begin = '# BEGIN %s' % (PAM_MOUNT_MARKER,)
+        try:
+            return any(line == begin for line in SYSTEM_LOGIN.read_text().splitlines())
+        except OSError:
+            return False
+
+    @execute_as_root
     def disable_pam_mount(self) -> None:
         _remove_marked_block(SYSTEM_LOGIN, PAM_MOUNT_MARKER)
 

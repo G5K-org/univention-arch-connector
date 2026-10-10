@@ -51,6 +51,11 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
     parser.add_argument('--force-ucs-dns', action='store_true', help="Point this system's DNS configuration at the UCS domain controller")
     parser.add_argument('--skip-login-manager', action='store_true', help="Don't check/configure the login manager for domain logins")
     parser.add_argument('--leave-domain', action='store_true', help='Undo a previous domain join using a backup (see --backup-dir)')
+    parser.add_argument(
+        '--mount-home', action=argparse.BooleanOptionalAction, default=None,
+        help='Mount each domain user\'s network home (as Windows clients get it from UCS) at %s at login. '
+             'A re-join without this option keeps the current setting.' % (shares.HOME_MOUNTPOINT,),
+    )
     parser.add_argument('--list-shares', action='store_true', help='List the file shares defined in UCS (after joining)')
     parser.add_argument(
         '--setup-shares', nargs='*', metavar='SHARE',
@@ -158,8 +163,10 @@ def run_shares_command(args: argparse.Namespace) -> None:
     if args.list_shares:
         for share in available:
             print('%s  //%s/%s%s' % (share.name, share.host, share.name, '  (set up)' if share.name in configured else ''))
-        homes = shares.list_home_shares()
-        print('%d user(s) have a home share in UCS.' % (len(homes),))
+        if shares.home_mount_enabled():
+            print('Home directories are mounted at %s (join with --no-mount-home to stop).' % (shares.HOME_MOUNTPOINT,))
+        else:
+            print('Home directories are not mounted (join with --mount-home to mount them at %s).' % (shares.HOME_MOUNTPOINT,))
         return
     names = args.setup_shares or choose_shares([share.name for share in available], configured)
     shares.setup_shares(names)
@@ -196,7 +203,7 @@ def main(argv: Optional[list] = None) -> None:
         if password is None:
             password = getpass.getpass('Domain administrator password: ')
 
-        joiner = connect_to_dc(dc_ip, username, password, args.skip_login_manager, args.force_ucs_dns)
+        joiner = connect_to_dc(dc_ip, username, password, args.skip_login_manager, args.force_ucs_dns, args.mount_home)
         run_join(joiner)
     except SystemExit:
         raise

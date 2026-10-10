@@ -24,7 +24,7 @@ PAM_MOUNT_CONF = """\
 """
 
 SHARE = shares.Share('arch-test', 'dc.example.com')
-HOME = shares.HomeShare('alice', 'files.example.com', 'homes/alice')
+HOME = shares.HomeShare('alice', 2099, 'files.example.com', 'homes/alice')
 
 
 @pytest.fixture
@@ -45,35 +45,58 @@ def test_parse_unc(unc, expected):
     assert shares.parse_unc(unc) == expected
 
 
-def test_volumes_for_shares_and_home_shares():
-    shares_volume, home_volume = (
-        ElementTree.fromstring(line) for line in shares.volume_lines([SHARE], [HOME], 'Domänen-Benutzer')
-    )
-    assert shares_volume.attrib == {
+def test_volumes_for_shares():
+    volume = ElementTree.fromstring(shares.volume_lines([SHARE], 'Domänen-Benutzer')[0])
+    assert volume.attrib == {
         'sgrp': 'Domänen-Benutzer', 'fstype': 'cifs', 'server': 'dc.example.com', 'path': 'arch-test',
         'mountpoint': '~/Freigaben/arch-test', 'options': shares.MOUNT_OPTIONS,
     }
-    assert home_volume.attrib['user'] == 'alice'
-    assert home_volume.attrib['path'] == 'homes/alice'
-    assert home_volume.attrib['mountpoint'] == '~/Freigaben/homes'
     assert 'sec=krb5' in shares.MOUNT_OPTIONS and 'cruid=%(USERUID)' in shares.MOUNT_OPTIONS
 
 
+def test_home_volumes_select_by_uid_and_exclude_own_home_shares():
+    generic, own = (ElementTree.fromstring(line) for line in
+                    shares.home_volume_lines('dc.example.com', '%(USER)', [HOME], 'Domain Users'))
+    assert generic.attrib['server'] == 'dc.example.com' and generic.attrib['path'] == '%(USER)'
+    assert generic.attrib['mountpoint'] == '~/Freigaben/Home'
+    assert generic.find('and/sgrp').text == 'Domain Users'
+    assert generic.find('and/not/uid').text == '2099'
+    assert own.attrib['server'] == 'files.example.com' and own.attrib['path'] == 'homes/alice'
+    assert own.attrib['mountpoint'] == '~/Freigaben/Home' and own.find('uid').text == '2099'
+
+    only = shares.home_volume_lines('dc.example.com', '%(USER)', [], 'G & <H>')
+    assert ElementTree.fromstring(only[0]).find('and/sgrp').text == 'G & <H>'
+
+
+@pytest.mark.parametrize('server, path, expected', [
+    ('pdn01', '%U', ('pdn01.example.com', '%(USER)')),
+    ('files.example.com', '\\\\homes\\%u', ('files.example.com', 'homes/%(USER)')),
+    ('', '', ('dc.example.com', '%(USER)')),
+    ('%L', 'homes/%D/%U', ('dc.example.com', '%(USER)')),
+])
+def test_samba_home_location(server, path, expected):
+    assert shares.samba_home_location(server, path, 'example.com', 'dc.example.com') == expected
+
+
 def test_volume_attributes_are_escaped():
-    line = shares.volume_lines([shares.Share('a"b&c', 'dc')], [], 'G<1>')[0]
+    line = shares.volume_lines([shares.Share('a"b&c', 'dc')], 'G<1>')[0]
     volume = ElementTree.fromstring(line)
     assert volume.attrib['path'] == 'a"b&c' and volume.attrib['sgrp'] == 'G<1>'
 
 
 def test_write_replace_and_remove_volumes(pam_mount_conf):
-    shares._write_volumes_impl(shares.volume_lines([SHARE], [], 'Domain Users'))
+    shares._write_volumes_impl(shares.volume_lines([SHARE], 'Domain Users'))
     content = pam_mount_conf.read_text()
     assert content.index(shares.BEGIN) < content.index('</pam_mount>')
     assert shares.configured_share_names() == ['arch-test']
 
-    shares._write_volumes_impl(shares.volume_lines([shares.Share('other', 'dc')], [HOME], 'Domain Users'))
-    assert pam_mount_conf.read_text().count(shares.BEGIN) == 1
-    assert shares.configured_share_names() == ['other']  # home shares aren't listed
+    shares._write_block_impl(shares.HOME_BEGIN, shares.HOME_END, shares.home_volume_lines('dc', '%(USER)', [HOME], 'G'))
+    shares._write_volumes_impl(shares.volume_lines([shares.Share('other', 'dc')], 'Domain Users'))
+    content = pam_mount_conf.read_text()
+    assert content.count(shares.BEGIN) == 1 and content.count(shares.HOME_BEGIN) == 1
+    assert shares.configured_share_names() == ['other']  # the home mount isn't a share
+
+    shares._write_block_impl(shares.HOME_BEGIN, shares.HOME_END, [])
 
     shares._write_volumes_impl([])
     assert pam_mount_conf.read_text() == PAM_MOUNT_CONF
