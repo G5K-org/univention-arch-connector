@@ -14,6 +14,7 @@
 # admin to do manually via UMC. See ../../NOTICE.md.
 
 import logging
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -35,7 +36,8 @@ _MARKER_BASED_PATHS = {str(SYSTEM_AUTH), str(SYSTEM_LOGIN), str(GROUP_CONF), str
 @execute_as_root
 def _reload_services() -> None:
     subprocess.call(['update-ca-trust', 'extract'])
-    subprocess.call(['dconf', 'update'])
+    if shutil.which('dconf'):  # only present with GDM/GNOME
+        subprocess.call(['dconf', 'update'])
     if SSSD_CONF.exists():
         subprocess.call(['systemctl', 'restart', 'sssd'])
     else:

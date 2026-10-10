@@ -158,8 +158,9 @@ def main(argv: Optional[list] = None) -> None:
     except SystemExit:
         raise
     except (DomainJoinException, Exception) as exc:
-        userinfo_logger.critical('Domain join failed: %s. See %s for details.', exc, args.logfile)
-        debug_logger.exception('Domain join failed')
+        action = 'Leaving the domain' if args.leave_domain else 'Domain join'
+        userinfo_logger.critical('%s failed: %s. See %s for details.', action, exc, args.logfile)
+        debug_logger.exception('%s failed', action)
         sys.exit(1)
 
 
