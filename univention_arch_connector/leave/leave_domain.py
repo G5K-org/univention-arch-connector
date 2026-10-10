@@ -38,6 +38,11 @@ def _reload_services() -> None:
     subprocess.call(['update-ca-trust', 'extract'])
     if shutil.which('dconf'):  # only present with GDM/GNOME
         subprocess.call(['dconf', 'update'])
+    # Pick up removed/restored --force-ucs-dns drop-ins.
+    if subprocess.call(['systemctl', 'is-active', '--quiet', 'systemd-resolved']) == 0:
+        subprocess.call(['systemctl', 'restart', 'systemd-resolved'])
+    if shutil.which('nmcli') and subprocess.call(['systemctl', 'is-active', '--quiet', 'NetworkManager']) == 0:
+        subprocess.call(['nmcli', 'general', 'reload'])
     if SSSD_CONF.exists():
         subprocess.call(['systemctl', 'restart', 'sssd'])
     else:
