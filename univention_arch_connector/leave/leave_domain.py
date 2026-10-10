@@ -22,7 +22,7 @@ from typing import Optional
 from univention_arch_connector.join_steps.nsswitch_configurator import NSSWITCH_CONF, NsswitchConfigurator
 from univention_arch_connector.join_steps.pam_configurator import GROUP_CONF, PamConfigurator, SYSTEM_AUTH, SYSTEM_LOGIN
 from univention_arch_connector.join_steps.sssd_configurator import SSSD_CONF
-from univention_arch_connector import login_users
+from univention_arch_connector import join_info, login_users
 from univention_arch_connector.shares import PAM_MOUNT_CONF, remove_home_mount, remove_shares
 from univention_arch_connector.utils.backup import entries_for_leave, find_latest_backup_dir, load_manifest, restore_file
 from univention_arch_connector.utils.general import execute_as_root
@@ -66,6 +66,7 @@ def leave_domain(backup_dir: Optional[Path] = None) -> None:
     remove_shares()
     remove_home_mount()
     login_users.remove()
+    join_info.remove()
     PamConfigurator().remove()
     NsswitchConfigurator().remove()
 

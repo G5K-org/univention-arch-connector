@@ -72,11 +72,13 @@ def pin_host_keys(
     host: str,
     expected_fingerprint: Optional[str],
     confirm: Callable[[str, List[str]], bool],
-) -> None:
+) -> str:
     """Verify ``host``'s SSH host keys and restrict ssh() to them.
 
     With ``expected_fingerprint``, one of the scanned keys must match it.
     Otherwise ``confirm(host, descriptions)`` is asked to accept them.
+    Returns a fingerprint to verify the host with next time (preferably
+    the ED25519 key's, which ssh-keygen -lf shows in the hints above).
     """
     keys = scan_host_keys(host)
     if not keys:
@@ -102,3 +104,5 @@ def pin_host_keys(
     known_hosts_file.write_text(''.join('%s\n' % (key,) for key in keys))
     set_ssh_known_hosts_file(str(known_hosts_file))
     userinfo_logger.info('Verified the SSH host key of %s', host)
+    preferred = next((key for key in keys if key.split()[1] == 'ssh-ed25519'), keys[0])
+    return fingerprint(preferred)

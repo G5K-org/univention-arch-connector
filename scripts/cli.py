@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from univention_arch_connector.join import check_system, connect_to_dc, resolve_dc_ip, run_join
+from univention_arch_connector.join import already_joined_notice, check_system, connect_to_dc, resolve_dc_ip, run_join
 from univention_arch_connector import shares
 from univention_arch_connector import login_users
 from univention_arch_connector.join_steps.sssd_configurator import is_joined
@@ -196,7 +196,10 @@ def main(argv: Optional[list] = None) -> None:
 
         check_system()
         dc_ip = resolve_dc_ip(args.domain, args.dc_ip)
-        pin_host_keys(dc_ip, args.dc_fingerprint, confirm_host_key)
+        notice = already_joined_notice()
+        if notice:
+            userinfo_logger.info(notice)
+        dc_fingerprint = pin_host_keys(dc_ip, args.dc_fingerprint, confirm_host_key)
 
         username = args.username or input('Domain administrator username: ')
         password = resolve_password(args)
@@ -204,7 +207,7 @@ def main(argv: Optional[list] = None) -> None:
             password = getpass.getpass('Domain administrator password: ')
 
         joiner = connect_to_dc(dc_ip, username, password, args.skip_login_manager, args.force_ucs_dns, args.mount_home)
-        run_join(joiner)
+        run_join(joiner, dc_fingerprint)
     except SystemExit:
         raise
     except Exception as exc:

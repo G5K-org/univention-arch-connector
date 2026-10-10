@@ -63,10 +63,16 @@ def test_run_join_rolls_back_on_ctrl_c(monkeypatch):
 def test_run_join_does_not_roll_back_on_success(monkeypatch):
     joiner = MagicMock()
     rollback = MagicMock()
+    save = MagicMock()
     monkeypatch.setattr(join, 'rollback', rollback)
+    monkeypatch.setattr(join.join_info, 'save', save)
 
-    join.run_join(joiner)
+    join.run_join(joiner, 'SHA256:abc')
     rollback.assert_not_called()
+    save.assert_called_once_with(
+        joiner.domain, joiner.ldap_server_name, joiner.dc_ip, 'SHA256:abc', joiner.admin_username,
+        joiner.force_ucs_dns, joiner.skip_login_manager,
+    )
 
 
 def test_missing_required_ucr_variables_are_reported(monkeypatch):

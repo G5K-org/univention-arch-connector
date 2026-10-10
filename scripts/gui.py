@@ -22,7 +22,8 @@ from PyQt5.QtWidgets import (
 )
 
 from univention_arch_connector import shares
-from univention_arch_connector.join import check_system, connect_to_dc, resolve_dc_ip, run_join
+from univention_arch_connector import join_info
+from univention_arch_connector.join import already_joined_notice, check_system, connect_to_dc, resolve_dc_ip, run_join
 from univention_arch_connector import login_users
 from univention_arch_connector.join_steps.sssd_configurator import is_joined
 from univention_arch_connector.utils.host_key import pin_host_keys
@@ -86,11 +87,11 @@ class JoinWorker(QObject):
         try:
             check_system()
             dc_ip = resolve_dc_ip(self.domain, self.dc_ip)
-            pin_host_keys(dc_ip, self.dc_fingerprint or None, self.confirm_host_key)
+            dc_fingerprint = pin_host_keys(dc_ip, self.dc_fingerprint or None, self.confirm_host_key)
             joiner = connect_to_dc(
                 dc_ip, self.username, self.password, self.skip_login_manager, self.force_ucs_dns, self.mount_home,
             )
-            run_join(joiner)
+            run_join(joiner, dc_fingerprint)
         except Exception as exc:
             debug_logger.exception('Domain join failed')
             self.finished.emit(False, str(exc))
@@ -196,7 +197,13 @@ class DomainJoinDialog(QDialog):
         button_row.addWidget(self.shares_button)
         button_row.addWidget(self.close_button)
 
+        self.notice_label = QLabel()
+        self.notice_label.setWordWrap(True)
+        self.notice_label.setStyleSheet('QLabel { border: 1px solid palette(mid); border-radius: 4px; padding: 6px; }')
+        self.notice_label.setVisible(False)
+
         layout = QVBoxLayout()
+        layout.addWidget(self.notice_label)
         layout.addLayout(form)
         layout.addWidget(QLabel('Log:'))
         layout.addWidget(self.log_view)
@@ -209,9 +216,29 @@ class DomainJoinDialog(QDialog):
         userinfo_logger.setLevel(logging.INFO)
         userinfo_logger.addHandler(handler)
 
+        self.show_join_state()
+
         self._drain_timer_id = self.startTimer(200)
         self.thread: Optional[QThread] = None
         self.worker: Optional[JoinWorker] = None
+
+    def show_join_state(self) -> None:
+        """If already joined, say so and prefill the form for a re-join."""
+        notice = already_joined_notice()
+        self.notice_label.setVisible(bool(notice))
+        if not notice:
+            return
+        self.notice_label.setText(notice)
+        info = join_info.load() or {}
+        for edit, key in ((self.username_edit, 'username'), (self.domain_edit, 'domain'),
+                          (self.dc_ip_edit, 'dc_ip'), (self.dc_fingerprint_edit, 'dc_fingerprint')):
+            if info.get(key) and not edit.text():
+                edit.setText(info[key])
+                edit.setCursorPosition(0)  # show the start of long values like the fingerprint
+        self.force_ucs_dns_checkbox.setChecked(bool(info.get('force_ucs_dns')))
+        self.skip_login_manager_checkbox.setChecked(bool(info.get('skip_login_manager')))
+        self.join_button.setText('Join again')
+        self.password_edit.setFocus()
 
     def timerEvent(self, event) -> None:  # noqa: N802 (Qt override)
         while not self.log_queue.empty():
@@ -286,6 +313,7 @@ class DomainJoinDialog(QDialog):
             self.thread.quit()
             self.thread.wait()
         if success:
+            self.show_join_state()
             self.shares_button.setEnabled(True)
             self.login_list_combo.setEnabled(True)
             QMessageBox.information(self, 'Success', 'Domain join successful. Please reboot this machine.')

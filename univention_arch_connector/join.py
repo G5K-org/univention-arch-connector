@@ -19,6 +19,7 @@ from univention_arch_connector.distributions.arch import (
     get_ucr_variables_from_dc,
     is_arch_based,
 )
+from univention_arch_connector import join_info
 from univention_arch_connector.leave.leave_domain import rollback
 from univention_arch_connector.utils.domain import get_master_ip_through_dns, get_ucs_domainname
 
@@ -82,7 +83,7 @@ def connect_to_dc(
     return ArchJoiner(ucr_variables, username, password, dc_ip, skip_login_manager, force_ucs_dns, mount_home)
 
 
-def run_join(joiner: ArchJoiner) -> None:
+def run_join(joiner: ArchJoiner, dc_fingerprint: Optional[str] = None) -> None:
     """Back up, then join. If the join fails, local configuration changes
     are rolled back before the error is re-raised.
     """
@@ -107,3 +108,21 @@ def run_join(joiner: ArchJoiner) -> None:
                 'Local configuration restored. A computer object created in UCS during the join was NOT removed.'
             )
         raise
+    join_info.save(
+        joiner.domain, joiner.ldap_server_name, joiner.dc_ip, dc_fingerprint, joiner.admin_username,
+        joiner.force_ucs_dns, joiner.skip_login_manager,
+    )
+
+
+def already_joined_notice() -> Optional[str]:
+    """A note that this system is already joined, or None."""
+    info = join_info.load()
+    if info is None:
+        return None
+    when = ' on %s' % (info['joined_at'][:10],) if info.get('joined_at') else ''
+    return (
+        'This computer is already a member of the domain %s (domain controller %s)%s. Joining again updates '
+        'its configuration and keeps the share, home and login screen settings.' % (
+            info['domain'] or 'unknown', info['dc_host'] or 'unknown', when,
+        )
+    )

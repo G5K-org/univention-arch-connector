@@ -130,3 +130,7 @@ for one test user, a home share (`sambahome`) for step 12.
 10. Launch via the desktop entry (`univention-arch-connector.desktop`).
     - [ ] A polkit (`pkexec`) prompt appears.
     - [ ] The wizard completes and produces the same result as the CLI.
+    - [ ] On a joined system, a note at the top names the domain, DC and join
+      date; username, domain, DC IP, fingerprint and options are prefilled
+      from the last join (domain/DC/DNS only, for systems joined before
+      this was recorded), and the button reads "Join again".
