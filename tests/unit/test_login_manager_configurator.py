@@ -20,7 +20,7 @@ def _fake_display_manager_service_link(tmp_path, target_name):
     return link
 
 
-@pytest.mark.parametrize('dm', ['sddm', 'gdm', 'lightdm'])
+@pytest.mark.parametrize('dm', ['sddm', 'gdm', 'lightdm', 'plasmalogin'])
 def test_detect_login_manager_supported(monkeypatch, tmp_path, dm):
     link = _fake_display_manager_service_link(tmp_path, dm)
     monkeypatch.setattr(lmc, 'DISPLAY_MANAGER_SERVICE_LINK', link)
@@ -34,7 +34,7 @@ def test_detect_login_manager_none_when_no_display_manager(monkeypatch, tmp_path
     assert lmc.detect_login_manager() is None
 
 
-@pytest.mark.parametrize('dm', ['plasmalogin', 'greetd', 'cosmic-greeter'])
+@pytest.mark.parametrize('dm', ['greetd', 'cosmic-greeter'])
 def test_unknown_login_manager_only_warns(monkeypatch, tmp_path, caplog, dm):
     link = _fake_display_manager_service_link(tmp_path, dm)
     monkeypatch.setattr(lmc, 'DISPLAY_MANAGER_SERVICE_LINK', link)
@@ -83,3 +83,16 @@ def test_lightdm_kde_classic_theme_no_conflict(monkeypatch, tmp_path):
     monkeypatch.setattr(lmc, 'LIGHTDM_KDE_GREETER_CONF', greeter_conf)
 
     lmc.LoginManagerConfigurator().check_for_conflicts(skip_login_manager=False)  # must not raise
+
+
+def test_plasma_login_is_supported_without_changes(monkeypatch, tmp_path, caplog):
+    link = _fake_display_manager_service_link(tmp_path, 'plasmalogin')
+    monkeypatch.setattr(lmc, 'DISPLAY_MANAGER_SERVICE_LINK', link)
+    caplog.set_level('INFO')
+
+    configurator = lmc.LoginManagerConfigurator()
+    configurator.check_for_conflicts(skip_login_manager=False)
+    configurator.enable_login_with_foreign_usernames()
+
+    assert 'not known' not in caplog.text
+    assert 'Type in Username and Password' in caplog.text

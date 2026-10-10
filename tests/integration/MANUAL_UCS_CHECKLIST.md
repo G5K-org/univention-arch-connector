@@ -53,9 +53,10 @@ LDAP, login manager behavior at the greeter) needs a real lab setup.
 
 ## Login
 
-6. Reboot. At the greeter (test SDDM, GDM, and LightDM separately, on
-   three VMs or by switching `display-manager.service`), log in as a UCS
-   domain user that is **not** a local user.
+6. Reboot. At the greeter (test SDDM, GDM, LightDM and Plasma Login separately, on
+   separate VMs or by switching `display-manager.service`), log in as a UCS
+   domain user that is **not** a local user. At Plasma Login, use "Type in
+   Username and Password"; domain users aren't in its user list.
    - [ ] Login succeeds and a home directory is auto-created
      (`pam_mkhomedir`).
    - [ ] `id <user>` shows the supplementary groups

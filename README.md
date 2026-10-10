@@ -23,7 +23,7 @@ When you join a client to the domain, the tool:
 - configures PAM via marker-delimited edits: `pam_sss` in
   `/etc/pam.d/system-auth`, `pam_mkhomedir` and `pam_group` in
   `/etc/pam.d/system-login`, supplementary groups in `/etc/security/group.conf`
-- configures the detected login manager (SDDM / GDM / LightDM) to allow login
+- configures the detected login manager (SDDM / GDM / LightDM / Plasma Login) to allow login
   with domain usernames that aren't in the local user list
 - optionally points the system's DNS at the UCS domain controller (`--force-ucs-dns`)
 - backs up every file it touches before changing it, and restores them

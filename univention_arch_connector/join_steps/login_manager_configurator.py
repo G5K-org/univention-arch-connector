@@ -6,8 +6,15 @@
 # detects the active display manager by reading Debian's
 # `/etc/X11/default-display-manager`. Arch has no such file; instead this
 # follows the systemd-standard convention of resolving the
-# `display-manager.service` symlink, which works uniformly for SDDM, GDM
-# and LightDM. See ../../NOTICE.md.
+# `display-manager.service` symlink, which works uniformly for SDDM, GDM,
+# LightDM and Plasma Login. See ../../NOTICE.md.
+#
+# Plasma Login (plasma-login-manager, KDE's successor to SDDM) needs no
+# change: its PAM service includes system-login, so pam_sss, pam_mkhomedir
+# and pam_mount apply, and its greeter offers "Type in Username and
+# Password" for users not in its list (which only shows local users).
+# Verified by running its PAM service (from plasma-login-manager 6.7.5)
+# for a domain user; the greeter itself is untested.
 #
 # Known open items to verify against real installs during QA (see plan):
 # - GDM's exact mechanism for allowing login with a username not in the
@@ -30,7 +37,7 @@ userinfo_logger = logging.getLogger('userinfo')
 
 DISPLAY_MANAGER_SERVICE_LINK = Path('/etc/systemd/system/display-manager.service')
 
-SUPPORTED_LOGIN_MANAGERS = {'sddm', 'gdm', 'lightdm'}
+SUPPORTED_LOGIN_MANAGERS = {'sddm', 'gdm', 'lightdm', 'plasmalogin'}
 
 LIGHTDM_CONF_D = Path('/etc/lightdm/lightdm.conf.d')
 LIGHTDM_MANUAL_LOGIN_CONF = LIGHTDM_CONF_D / '99-show-manual-userlogin.conf'
@@ -109,6 +116,10 @@ class LoginManagerConfigurator:
             self._configure_gdm()
         elif login_manager == 'sddm':
             userinfo_logger.info('SDDM already allows login with usernames outside the local user list; no change needed.')
+        elif login_manager == 'plasmalogin':
+            userinfo_logger.info(
+                'Plasma Login needs no change: domain users log in via "Type in Username and Password" at the greeter.'
+            )
 
     @execute_as_root
     def _configure_lightdm(self) -> None:
