@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Univention Domain Join
+Comment=Join this computer into a Univention Corporate Server (UCS) domain
+Exec=pkexec --disable-internal-agent /usr/bin/univention-arch-connector-gui
+Icon=univention-arch-connector
+Terminal=false
+Categories=System;Settings;
+NoDisplay=false
+StartupNotify=true

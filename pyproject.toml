@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "univention-arch-connector"
+version = "0.1.0"
+description = "Join Arch Linux clients into a Univention Corporate Server (UCS) domain"
+readme = "README.md"
+license = { text = "AGPL-3.0-only" }
+requires-python = ">=3.10"
+authors = [
+    { name = "univention-arch-connector contributors" },
+]
+dependencies = [
+    "python-ldap",
+    "dnspython",
+    "netifaces",
+]
+
+[project.urls]
+Homepage = "https://github.com/G5K-org/univention-arch-connector"
+Upstream = "https://github.com/univention/univention-domain-join"
+
+[tool.setuptools.packages.find]
+include = ["univention_arch_connector*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+pythonpath = ["."]

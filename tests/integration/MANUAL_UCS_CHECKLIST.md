@@ -1,0 +1,70 @@
+# Manual end-to-end checklist against a real UCS domain controller
+
+Unit tests cover the pure logic offline; everything that actually talks to
+a UCS domain controller (LDAP object creation, Kerberos, SSSD against real
+LDAP, login manager behavior at the greeter) needs a real lab setup.
+
+## Setup
+
+1. Provision a UCS 5.x VM as DC Master in an isolated lab network. Note its
+   IP address, domain name, and LDAP base DN.
+2. Provision a fresh Arch Linux or CachyOS VM on the same network, default
+   install, with NetworkManager and systemd-resolved active.
+3. Install this project (either via the PKGBUILDs under `packaging/`, or by
+   running `scripts/cli.py` directly from a checkout with the venv's
+   dependencies installed and `PYTHONPATH` set).
+
+## Join
+
+4. Run as root:
+   ```
+   univention-arch-connector-cli --dc-ip <ip> --username Administrator --password-file /path/to/pwfile
+   ```
+5. Verify:
+   - [ ] The computer object appears in UCS UMC under `cn=computers`.
+   - [ ] `/etc/sssd/sssd.conf`, `/etc/krb5.conf`, `/etc/ldap/ldap.conf`,
+     `/etc/machine.secret` (mode 600) were written.
+   - [ ] `/etc/pam.d/system-login` and `/etc/security/group.conf` each
+     contain exactly one `univention-arch-connector` marker block.
+   - [ ] Re-running the join produces **no duplicate** marker blocks
+     (idempotency).
+   - [ ] `/etc/nsswitch.conf` has `sss` appended on the `passwd`, `group`,
+     and `shadow` lines, with existing tokens (e.g. `[SUCCESS=merge]
+     systemd`) intact.
+   - [ ] The UCS root CA is present under
+     `/etc/ca-certificates/trust-source/anchors/UCSdomain.crt` and `trust
+     list` shows it.
+
+## Login
+
+6. Reboot. At the greeter (test SDDM, GDM, and LightDM separately, on
+   three VMs or by switching `display-manager.service`), log in as a UCS
+   domain user that is **not** a local user.
+   - [ ] Login succeeds and a home directory is auto-created
+     (`pam_mkhomedir`).
+   - [ ] `id <user>` shows the supplementary groups
+     (`audio,cdrom,dialout,floppy,plugdev,adm`).
+   - [ ] `kinit <user>` and `klist` work.
+   - [ ] `getent passwd <user>` resolves via SSSD.
+
+## Options
+
+7. On a second clean VM, test `--force-ucs-dns`:
+   - [ ] Nameservers point at the UCS DC afterward.
+   - [ ] `_domaincontroller_master._tcp.<domain>` SRV resolves.
+8. Test `--skip-login-manager`:
+   - [ ] No login-manager conflict check or config file is touched.
+9. Test `--leave-domain`:
+   - [ ] Marker blocks removed from `system-login`/`group.conf`/`nsswitch.conf`.
+   - [ ] `sssd.conf`, `krb5.conf`, `ldap.conf` restored to their pre-join
+     state (or removed, if they didn't exist before).
+   - [ ] The UCS CA trust anchor is removed.
+   - [ ] The domain user can no longer log in; local users are unaffected.
+   - [ ] The computer object in UCS was **not** removed automatically (by
+     design) - confirm the tool logged a reminder to do it manually.
+
+## GUI
+
+10. Launch via the desktop entry (`univention-arch-connector.desktop`).
+    - [ ] A polkit (`pkexec`) prompt appears.
+    - [ ] The wizard completes and produces the same result as the CLI.

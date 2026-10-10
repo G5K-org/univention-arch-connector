@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2025 univention-arch-connector contributors
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Lightly adapted from univention-domain-join (upstream module:
+# scripts/gui.py). Same contract as upstream: a PyQt5 assistant that
+# collects the admin credentials/options and then drives the same Joiner
+# the CLI uses, launched elevated via polkit's pkexec (see
+# data/*.policy and data/*.desktop) rather than reimplementing any
+# privilege logic itself. See ../NOTICE.md.
+
+import logging
+import queue
+import sys
+from typing import Optional
+
+from PyQt5.QtCore import QObject, QThread, pyqtSignal
+from PyQt5.QtWidgets import (
+    QApplication, QCheckBox, QDialog, QFormLayout, QHBoxLayout, QLabel,
+    QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout,
+)
+
+from univention_arch_connector.distributions.arch import (
+    ArchJoiner, check_if_ssh_works_with_given_account, get_ucr_variables_from_dc, is_arch_based,
+)
+from univention_arch_connector.utils.domain import get_master_ip_through_dns, get_ucs_domainname
+
+userinfo_logger = logging.getLogger('userinfo')
+debug_logger = logging.getLogger('debugging')
+
+
+class QueueLogHandler(logging.Handler):
+    def __init__(self, log_queue: "queue.Queue[str]") -> None:
+        super().__init__()
+        self.log_queue = log_queue
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.log_queue.put(self.format(record))
+
+
+class JoinWorker(QObject):
+    finished = pyqtSignal(bool, str)
+
+    def __init__(self, username: str, password: str, domain: str, dc_ip: str,
+                 skip_login_manager: bool, force_ucs_dns: bool) -> None:
+        super().__init__()
+        self.username = username
+        self.password = password
+        self.domain = domain
+        self.dc_ip = dc_ip
+        self.skip_login_manager = skip_login_manager
+        self.force_ucs_dns = force_ucs_dns
+
+    def run(self) -> None:
+        try:
+            if not is_arch_based():
+                raise RuntimeError('This system does not appear to be Arch Linux or an Arch-based distribution.')
+
+            dc_ip = self.dc_ip
+            if not dc_ip:
+                domain = self.domain or get_ucs_domainname()
+                if not domain:
+                    raise RuntimeError('Could not determine the UCS domain automatically. Please specify it.')
+                dc_ip = get_master_ip_through_dns(domain)
+                if not dc_ip:
+                    raise RuntimeError("Could not resolve the domain controller's address for '%s'." % (domain,))
+
+            if not check_if_ssh_works_with_given_account(dc_ip, self.username, self.password):
+                raise RuntimeError('Could not log in to %s via SSH as %s. Check the credentials.' % (dc_ip, self.username))
+
+            userinfo_logger.info('Fetching domain configuration from the domain controller')
+            ucr_variables = get_ucr_variables_from_dc(dc_ip, self.username, self.password)
+
+            joiner = ArchJoiner(
+                ucr_variables, self.username, self.password, dc_ip,
+                self.skip_login_manager, self.force_ucs_dns,
+            )
+            joiner.check_if_join_is_possible_without_problems()
+            joiner.create_backup_of_config_files()
+            joiner.join_domain()
+        except Exception as exc:
+            debug_logger.exception('Domain join failed')
+            self.finished.emit(False, str(exc))
+        else:
+            self.finished.emit(True, '')
+
+
+class DomainJoinDialog(QDialog):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setWindowTitle('Join Univention Domain')
+        self.setMinimumWidth(480)
+
+        self.username_edit = QLineEdit()
+        self.password_edit = QLineEdit()
+        self.password_edit.setEchoMode(QLineEdit.Password)
+        self.domain_edit = QLineEdit()
+        self.domain_edit.setPlaceholderText('auto-detected if left empty')
+        self.dc_ip_edit = QLineEdit()
+        self.dc_ip_edit.setPlaceholderText('auto-detected via DNS if left empty')
+        self.skip_login_manager_checkbox = QCheckBox("Don't configure the login manager")
+        self.force_ucs_dns_checkbox = QCheckBox("Point this system's DNS at the domain controller")
+
+        form = QFormLayout()
+        form.addRow('Administrator username:', self.username_edit)
+        form.addRow('Administrator password:', self.password_edit)
+        form.addRow('Domain (optional):', self.domain_edit)
+        form.addRow('Domain controller IP (optional):', self.dc_ip_edit)
+        form.addRow(self.skip_login_manager_checkbox)
+        form.addRow(self.force_ucs_dns_checkbox)
+
+        self.log_view = QPlainTextEdit()
+        self.log_view.setReadOnly(True)
+        self.log_view.setMinimumHeight(160)
+
+        self.join_button = QPushButton('Join domain')
+        self.join_button.clicked.connect(self.start_join)
+        self.close_button = QPushButton('Close')
+        self.close_button.clicked.connect(self.reject)
+
+        button_row = QHBoxLayout()
+        button_row.addWidget(self.join_button)
+        button_row.addWidget(self.close_button)
+
+        layout = QVBoxLayout()
+        layout.addLayout(form)
+        layout.addWidget(QLabel('Log:'))
+        layout.addWidget(self.log_view)
+        layout.addLayout(button_row)
+        self.setLayout(layout)
+
+        self.log_queue: "queue.Queue[str]" = queue.Queue()
+        handler = QueueLogHandler(self.log_queue)
+        handler.setFormatter(logging.Formatter('%(message)s'))
+        userinfo_logger.setLevel(logging.INFO)
+        userinfo_logger.addHandler(handler)
+
+        self._drain_timer_id = self.startTimer(200)
+        self.thread: Optional[QThread] = None
+        self.worker: Optional[JoinWorker] = None
+
+    def timerEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        while not self.log_queue.empty():
+            self.log_view.appendPlainText(self.log_queue.get_nowait())
+
+    def start_join(self) -> None:
+        username = self.username_edit.text().strip()
+        password = self.password_edit.text()
+        if not username or not password:
+            QMessageBox.warning(self, 'Missing information', 'Please enter a username and password.')
+            return
+
+        self.join_button.setEnabled(False)
+        self.log_view.clear()
+
+        self.thread = QThread()
+        self.worker = JoinWorker(
+            username, password,
+            self.domain_edit.text().strip(),
+            self.dc_ip_edit.text().strip(),
+            self.skip_login_manager_checkbox.isChecked(),
+            self.force_ucs_dns_checkbox.isChecked(),
+        )
+        self.worker.moveToThread(self.thread)
+        self.thread.started.connect(self.worker.run)
+        self.worker.finished.connect(self.on_join_finished)
+        self.thread.start()
+
+    def on_join_finished(self, success: bool, error_message: str) -> None:
+        self.join_button.setEnabled(True)
+        if self.thread is not None:
+            self.thread.quit()
+            self.thread.wait()
+        if success:
+            QMessageBox.information(self, 'Success', 'Domain join successful. Please reboot this machine.')
+        else:
+            QMessageBox.critical(self, 'Domain join failed', error_message)
+
+
+def main() -> None:
+    app = QApplication(sys.argv)  # noqa: F841 - must stay referenced for the app's lifetime
+    dialog = DomainJoinDialog()
+    dialog.exec_()
+    sys.exit(0)
+
+
+if __name__ == '__main__':
+    main()

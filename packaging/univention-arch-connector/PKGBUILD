@@ -1,0 +1,24 @@
+# Maintainer: univention-arch-connector contributors
+pkgname=univention-arch-connector
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Graphical assistant to join this Arch Linux client into a Univention Corporate Server (UCS) domain"
+arch=('any')
+url="https://github.com/G5K-org/univention-arch-connector"
+license=('AGPL-3.0-only')
+depends=("univention-arch-connector-cli=$pkgver" 'polkit' 'python-pyqt5')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/G5K-org/univention-arch-connector/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+  cd "univention-arch-connector-$pkgver"
+  install -Dm755 scripts/gui.py "$pkgdir/usr/bin/univention-arch-connector-gui"
+  install -Dm644 "data/io.github.g5k-org.univention-arch-connector.policy" \
+    "$pkgdir/usr/share/polkit-1/actions/io.github.g5k-org.univention-arch-connector.policy"
+  install -Dm644 data/univention-arch-connector.desktop \
+    "$pkgdir/usr/share/applications/univention-arch-connector.desktop"
+  install -Dm644 data/univention-arch-connector.svg \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/univention-arch-connector.svg"
+  install -Dm644 LICENSES/AGPL-3.0-only.txt "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 NOTICE.md "$pkgdir/usr/share/licenses/$pkgname/NOTICE.md"
+}

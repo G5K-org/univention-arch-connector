@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2017-2025 Univention GmbH
+# SPDX-FileCopyrightText: 2025 univention-arch-connector contributors
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Lightly adapted from univention-domain-join (upstream module:
+# univention_domain_join/join_steps/sssd_configurator.py). The sssd.conf
+# content itself (LDAP id_provider + Kerberos auth_provider, port 7389,
+# machine-account bind, kpasswd-server selection) is unchanged - Arch's
+# `sssd` package is the same upstream SSSD project. The only functional
+# change is dropping the Debian-only `pam-auth-update` call: mkhomedir
+# activation on Arch happens exclusively via pam_configurator.py, and
+# `sss` is wired into NSS via nsswitch_configurator.py instead of relying
+# on a Debian postinst script. See ../../NOTICE.md.
+
+import logging
+import subprocess
+from pathlib import Path
+
+from univention_arch_connector.join_steps.root_certificate_provider import CA_CERT_PATH
+from univention_arch_connector.utils.backup import Backup
+from univention_arch_connector.utils.general import execute_as_root
+
+userinfo_logger = logging.getLogger('userinfo')
+
+SSSD_CONF = Path('/etc/sssd/sssd.conf')
+
+
+class ConflictChecker:
+    def config_file_exists(self) -> bool:
+        if SSSD_CONF.is_file():
+            userinfo_logger.warning('Warning: %s already exists.', SSSD_CONF)
+            return True
+        return False
+
+
+class SssdConfigurator(ConflictChecker):
+    @execute_as_root
+    def backup(self, backup: Backup) -> None:
+        backup.backup_file(str(SSSD_CONF))
+
+    def setup_sssd(
+        self,
+        domain: str,
+        ldap_master: str,
+        ldap_base: str,
+        machine_dn: str,
+        machine_password: str,
+        kerberos_realm: str,
+        ldap_server_name: str,
+        is_samba_dc: bool,
+    ) -> None:
+        self.write_sssd_conf(domain, ldap_master, ldap_base, machine_dn, machine_password, kerberos_realm, ldap_server_name, is_samba_dc)
+        self.restart_sssd()
+
+    @execute_as_root
+    def write_sssd_conf(
+        self,
+        domain: str,
+        ldap_master: str,
+        ldap_base: str,
+        machine_dn: str,
+        machine_password: str,
+        kerberos_realm: str,
+        ldap_server_name: str,
+        is_samba_dc: bool,
+    ) -> None:
+        userinfo_logger.info('Writing %s', SSSD_CONF)
+        kpasswd_name = ldap_server_name if is_samba_dc else ldap_master
+        config = (
+            '[sssd]\n'
+            'services = nss, pam\n'
+            'config_file_version = 2\n'
+            'domains = %(domain)s\n'
+            '\n'
+            '[domain/%(domain)s]\n'
+            'id_provider = ldap\n'
+            'auth_provider = krb5\n'
+            'chpass_provider = krb5\n'
+            'ldap_uri = ldap://%(ldap_master)s:7389/\n'
+            'ldap_search_base = %(ldap_base)s\n'
+            'ldap_tls_reqcert = demand\n'
+            'ldap_tls_cacert = %(ca_cert)s\n'
+            'ldap_default_bind_dn = %(machine_dn)s\n'
+            'ldap_default_authtok_type = password\n'
+            'ldap_default_authtok = %(machine_password)s\n'
+            'krb5_server = %(ldap_server_name)s\n'
+            'krb5_kpasswd = %(kpasswd_name)s\n'
+            'krb5_realm = %(kerberos_realm)s\n'
+            'cache_credentials = true\n'
+            'enumerate = false\n'
+            '\n'
+            '[nss]\n'
+            '\n'
+            '[pam]\n'
+            % {
+                'domain': domain,
+                'ldap_master': ldap_master,
+                'ldap_base': ldap_base,
+                'ca_cert': CA_CERT_PATH,
+                'machine_dn': machine_dn,
+                'machine_password': machine_password,
+                'ldap_server_name': ldap_server_name,
+                'kpasswd_name': kpasswd_name,
+                'kerberos_realm': kerberos_realm,
+            }
+        )
+        SSSD_CONF.parent.mkdir(parents=True, exist_ok=True)
+        SSSD_CONF.write_text(config)
+        SSSD_CONF.chmod(0o600)
+
+    @execute_as_root
+    def restart_sssd(self) -> None:
+        userinfo_logger.info('Restarting sssd')
+        subprocess.check_output(['systemctl', 'enable', '--now', 'sssd'], stderr=subprocess.STDOUT)
+        subprocess.check_output(['systemctl', 'restart', 'sssd'], stderr=subprocess.STDOUT)
+
+    @execute_as_root
+    def remove(self) -> None:
+        subprocess.call(['systemctl', 'disable', '--now', 'sssd'])
+        if SSSD_CONF.exists():
+            SSSD_CONF.unlink()

@@ -1,0 +1,30 @@
+# Maintainer: univention-arch-connector contributors
+pkgname=python-univention-arch-connector
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Library for joining Arch Linux clients into a Univention Corporate Server (UCS) domain"
+arch=('any')
+url="https://github.com/G5K-org/univention-arch-connector"
+license=('AGPL-3.0-only')
+depends=('python' 'python-ldap' 'python-dnspython' 'python-netifaces' 'sshpass' 'krb5' 'openssh')
+makedepends=('python-build' 'python-installer' 'python-setuptools' 'python-wheel')
+checkdepends=('python-pytest')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/G5K-org/univention-arch-connector/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "univention-arch-connector-$pkgver"
+  python -m build --wheel --no-isolation
+}
+
+check() {
+  cd "univention-arch-connector-$pkgver"
+  PYTHONPATH=. python -m pytest tests/unit
+}
+
+package() {
+  cd "univention-arch-connector-$pkgver"
+  python -m installer --destdir="$pkgdir" dist/*.whl
+  install -Dm644 LICENSES/AGPL-3.0-only.txt "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 NOTICE.md "$pkgdir/usr/share/licenses/$pkgname/NOTICE.md"
+}
