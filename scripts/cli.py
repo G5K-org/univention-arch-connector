@@ -20,6 +20,7 @@ from typing import List, Optional
 from univention_arch_connector.join import check_system, connect_to_dc, resolve_dc_ip, run_join
 from univention_arch_connector import shares
 from univention_arch_connector.leave.leave_domain import leave_domain
+from univention_arch_connector.utils.general import execute_as_root
 from univention_arch_connector.utils.host_key import pin_host_keys
 
 userinfo_logger = logging.getLogger('userinfo')
@@ -95,14 +96,20 @@ def set_up_logging(logfile: str) -> None:
     debug_logger.addHandler(file_handler)
 
 
+@execute_as_root
+def read_password_file(path: str) -> str:
+    # As root: under sudo the caller is root anyway, and the file is often root-only.
+    return Path(path).read_text().rstrip('\n')
+
+
 def resolve_password(args: argparse.Namespace) -> Optional[str]:
     if args.password:
         return args.password
     if args.password_file:
         try:
-            return Path(args.password_file).read_text().rstrip('\n')
+            return read_password_file(args.password_file)
         except OSError as exc:
-            userinfo_logger.error('Could not read --password-file: %s', exc)
+            raise RuntimeError('Could not read --password-file: %s' % (exc,))
     return None
 
 
@@ -154,8 +161,10 @@ def run_shares_command(args: argparse.Namespace) -> None:
 def main(argv: Optional[list] = None) -> None:
     args = parse_args(argv)
     check_if_run_as_root()
-    drop_privileges()
+    # Open the log file while still root: after dropping privileges under
+    # sudo, /var/log is no longer writable.
     set_up_logging(args.logfile)
+    drop_privileges()
 
     try:
         if args.leave_domain:

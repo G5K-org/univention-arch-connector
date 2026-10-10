@@ -122,6 +122,7 @@ def _taken_before_join(backup_dir: Path) -> bool:
     )
 
 
+@execute_as_root
 def find_latest_backup_dir() -> Optional[Path]:
     """The backup --leave-domain restores: the newest one taken while the
     system was not joined yet. Backups taken by later re-joins hold domain
@@ -133,6 +134,7 @@ def find_latest_backup_dir() -> Optional[Path]:
     return None
 
 
+@execute_as_root
 def entries_for_leave(backup_dir: Path) -> List[Tuple[ManifestEntry, Path]]:
     """Manifest entries to restore when leaving, each with the backup dir
     holding its copy: those of ``backup_dir``, plus files that only later
@@ -174,6 +176,9 @@ def prune_old_backups() -> None:
     _prune_old_backups_impl()
 
 
+# Reading backups needs root, like writing them: they are private (mode
+# 700), and the CLI runs most code with the invoking user's UID under sudo.
+@execute_as_root
 def load_manifest(backup_dir: Path) -> List[ManifestEntry]:
     manifest_path = backup_dir / 'manifest.json'
     return json.loads(manifest_path.read_text())
