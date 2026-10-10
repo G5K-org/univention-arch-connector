@@ -19,7 +19,7 @@ import os
 import string
 import subprocess
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 from univention_arch_connector.join_steps.root_certificate_provider import CA_CERT_PATH, RootCertificateProvider
 from univention_arch_connector.utils.backup import Backup
@@ -58,6 +58,9 @@ class ConflictChecker:
 class LdapConfigurator(ConflictChecker):
     def __init__(self) -> None:
         self.root_certificate_provider = RootCertificateProvider()
+        # Set as soon as the computer object in UCS has this password, so a
+        # rollback can keep local configuration working (join.py).
+        self.password_set_on_dc: Optional[str] = None
 
     @execute_as_root
     def backup(self, backup: Backup) -> None:
@@ -77,6 +80,7 @@ class LdapConfigurator(ConflictChecker):
         self.root_certificate_provider.provide_ucs_root_certificate(dc_ip, admin_username, admin_pw)
         machine_password = self.random_password()
         machine_dn = self.modify_old_entry_or_add_machine_to_ldap(dc_ip, admin_username, admin_pw, admin_dn, ldap_base, machine_password)
+        self.password_set_on_dc = machine_password
         self.create_ldap_conf_file(ldap_master, ldap_base)
         self.create_machine_secret_file(machine_password)
         return machine_password, machine_dn

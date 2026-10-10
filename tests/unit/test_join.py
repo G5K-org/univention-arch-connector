@@ -187,3 +187,29 @@ def test_only_answering_ucs_nameservers_are_used(monkeypatch):
 
     monkeypatch.setattr(domain.dns.resolver, 'Resolver', FakeResolver)
     assert domain.ucs_nameservers_answering(['10.0.0.244', '10.1.0.1', '10.0.0.244'], 'example.com') == ['10.0.0.244']
+
+
+def test_rollback_of_a_rejoin_keeps_the_password_ucs_already_has(monkeypatch):
+    from univention_arch_connector.distributions import arch as arch_mod
+    joiner = arch_mod.ArchJoiner.__new__(arch_mod.ArchJoiner)
+    joiner.ldap_configurator = MagicMock(password_set_on_dc='new-secret')
+    joiner.sssd_configurator = MagicMock()
+    joiner.backup = MagicMock(joined_before=True)
+
+    joiner.keep_new_machine_password()
+
+    joiner.ldap_configurator.create_machine_secret_file.assert_called_once_with('new-secret')
+    joiner.sssd_configurator.update_machine_password.assert_called_once_with('new-secret')
+
+
+@pytest.mark.parametrize('joined_before, password', [(False, 'new-secret'), (True, None)])
+def test_rollback_leaves_config_alone_when_not_needed(joined_before, password):
+    from univention_arch_connector.distributions import arch as arch_mod
+    joiner = arch_mod.ArchJoiner.__new__(arch_mod.ArchJoiner)
+    joiner.ldap_configurator = MagicMock(password_set_on_dc=password)
+    joiner.sssd_configurator = MagicMock()
+    joiner.backup = MagicMock(joined_before=joined_before)
+
+    joiner.keep_new_machine_password()
+
+    joiner.sssd_configurator.update_machine_password.assert_not_called()

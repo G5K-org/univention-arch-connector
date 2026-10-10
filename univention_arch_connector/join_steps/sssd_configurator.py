@@ -34,6 +34,10 @@ SSSD_CONF = Path('/etc/sssd/sssd.conf')
 CCNAME_TEMPLATE = 'FILE:/tmp/krb5cc_%U'
 
 
+def _key(line: str) -> str:
+    return line.split('=', 1)[0].strip()
+
+
 class ConflictChecker:
     def config_file_exists(self) -> bool:
         if SSSD_CONF.is_file():
@@ -119,6 +123,16 @@ class SssdConfigurator(ConflictChecker):
         SSSD_CONF.parent.mkdir(parents=True, exist_ok=True)
         SSSD_CONF.write_text(config)
         SSSD_CONF.chmod(0o600)
+
+    @execute_as_root
+    def update_machine_password(self, machine_password: str) -> None:
+        """Replace the machine account password in sssd.conf."""
+        lines = SSSD_CONF.read_text().splitlines(keepends=True)
+        SSSD_CONF.write_text(''.join(
+            'ldap_default_authtok = %s\n' % (machine_password,) if _key(line) == 'ldap_default_authtok' else line
+            for line in lines
+        ))
+        subprocess.check_output(['systemctl', 'restart', 'sssd'], stderr=subprocess.STDOUT)
 
     @execute_as_root
     def ensure_default_ccache_location(self) -> None:

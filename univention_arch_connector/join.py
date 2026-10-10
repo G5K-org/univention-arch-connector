@@ -93,6 +93,7 @@ def run_join(joiner: ArchJoiner) -> None:
         debug_logger.exception('Domain join failed, rolling back')
         try:
             rollback(backup_dir)
+            joiner.keep_new_machine_password()
         except Exception:
             debug_logger.exception('Rollback failed')
             userinfo_logger.error(

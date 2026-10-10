@@ -139,6 +139,19 @@ class ArchJoiner(AbstractJoiner):
         self.machine_dn: Optional[str] = None
         self.backup: Optional[Backup] = None
 
+    def keep_new_machine_password(self) -> None:
+        """After a rollback: if this join already gave the computer object
+        in UCS a new password and the system was joined before, the
+        restored configuration holds the old one, which UCS no longer
+        accepts. Put the new one in, so the previous join keeps working.
+        """
+        new_password = self.ldap_configurator.password_set_on_dc
+        if not new_password or self.backup is None or not self.backup.joined_before:
+            return
+        userinfo_logger.info('Keeping the new machine account password, which UCS already uses')
+        self.ldap_configurator.create_machine_secret_file(new_password)
+        self.sssd_configurator.update_machine_password(new_password)
+
     def check_dc_names_resolve_to_the_dc(self, ucs_nameservers: List[str]) -> None:
         """SSSD and Kerberos reach the DC by name, through this system's
         resolver. If that resolves the name differently than the UCS DNS
