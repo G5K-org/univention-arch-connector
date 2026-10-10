@@ -34,12 +34,15 @@ def test_detect_login_manager_none_when_no_display_manager(monkeypatch, tmp_path
     assert lmc.detect_login_manager() is None
 
 
-def test_check_for_conflicts_raises_for_unsupported_manager(monkeypatch, tmp_path):
-    link = _fake_display_manager_service_link(tmp_path, 'xdm')
+@pytest.mark.parametrize('dm', ['plasmalogin', 'greetd', 'cosmic-greeter'])
+def test_unknown_login_manager_only_warns(monkeypatch, tmp_path, caplog, dm):
+    link = _fake_display_manager_service_link(tmp_path, dm)
     monkeypatch.setattr(lmc, 'DISPLAY_MANAGER_SERVICE_LINK', link)
 
-    with pytest.raises(DomainJoinException):
-        lmc.LoginManagerConfigurator().check_for_conflicts(skip_login_manager=False)
+    lmc.LoginManagerConfigurator().check_for_conflicts(skip_login_manager=False)
+    lmc.LoginManagerConfigurator().enable_login_with_foreign_usernames()
+
+    assert "'%s' is not known" % (dm,) in caplog.text
 
 
 def test_check_for_conflicts_passes_for_supported_managers(monkeypatch, tmp_path):

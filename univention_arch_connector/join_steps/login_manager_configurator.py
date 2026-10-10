@@ -75,11 +75,16 @@ class LoginManagerConfigurator:
         if login_manager is None:
             return
         if login_manager not in SUPPORTED_LOGIN_MANAGERS:
-            raise DomainJoinException(
-                "Unsupported login manager '%s'. Supported: %s. "
-                "Rerun with --skip-login-manager to skip this step."
-                % (login_manager, ', '.join(sorted(SUPPORTED_LOGIN_MANAGERS)))
+            # New login managers keep appearing (plasma-login-manager,
+            # greetd, cosmic-greeter, ...). Not knowing one must not block
+            # the join: domain logins work through PAM regardless, only
+            # typing a name that isn't in the user list may need checking.
+            userinfo_logger.warning(
+                "Login manager '%s' is not known to this tool and is left unchanged. Domain logins "
+                "work through PAM, but check that it lets you type a username that isn't listed. "
+                "Known: %s.", login_manager, ', '.join(sorted(SUPPORTED_LOGIN_MANAGERS)),
             )
+            return
         if login_manager == 'lightdm' and _lightdm_kde_greeter_is_installed() and not _lightdm_kde_theme_is_classic():
             raise DomainJoinException(
                 "LightDM's KDE greeter theme is not set to 'classic', which is incompatible "
