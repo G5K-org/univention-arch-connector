@@ -86,6 +86,10 @@ runs the unit tests. CI runs them in an Arch Linux container on every push.
 [tests/integration/MANUAL_UCS_CHECKLIST.md](tests/integration/MANUAL_UCS_CHECKLIST.md)
 covers testing against a real UCS domain controller.
 
+This is a port of Univention's `univention-domain-join`.
+[UPSTREAM](UPSTREAM) records the upstream commit it was last compared with;
+a weekly CI job fails when upstream has new commits to review.
+
 ## License
 
 AGPL-3.0-only. See [LICENSES/AGPL-3.0-only.txt](LICENSES/AGPL-3.0-only.txt) and [NOTICE.md](NOTICE.md).

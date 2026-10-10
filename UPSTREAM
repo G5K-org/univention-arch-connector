@@ -1,0 +1,6 @@
+# The univention-domain-join commit this port was last compared against.
+# .github/workflows/upstream.yml checks weekly whether upstream moved on.
+# After reviewing upstream's changes (and porting what applies), update
+# the hash below.
+repository=https://github.com/univention/univention-domain-join
+commit=0df8ce57fe041a6662babef8f19220503f53f7ef

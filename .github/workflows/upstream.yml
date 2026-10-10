@@ -1,0 +1,24 @@
+name: upstream
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Mondays
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Compare with univention-domain-join
+        run: |
+          repository=$(sed -n 's/^repository=//p' UPSTREAM)
+          reviewed=$(sed -n 's/^commit=//p' UPSTREAM)
+          current=$(git ls-remote "$repository" HEAD | cut -f1)
+          if [ "$current" != "$reviewed" ]; then
+            echo "::error::Upstream moved from $reviewed to $current: $repository/compare/$reviewed...$current"
+            echo "Review the changes, port what applies, then update UPSTREAM." >> "$GITHUB_STEP_SUMMARY"
+            echo "$repository/compare/$reviewed...$current" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "Upstream unchanged at $reviewed."

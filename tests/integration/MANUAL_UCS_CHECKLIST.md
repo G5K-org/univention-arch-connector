@@ -26,9 +26,14 @@ LDAP, login manager behavior at the greeter) needs a real lab setup.
      `--dc-fingerprint` is given; a wrong fingerprint is rejected.
    - [ ] Without `--dc-ip`, the domain is auto-detected, also when the
      client's DNS domain is a subdomain of the UCS domain.
+   - [ ] With the FQDN in `/etc/hostname`, the computer object is still
+     named (and found) by the short hostname.
+   - [ ] While the join runs, `/dev/shm/univention-arch-connector-*` on the
+     DC is mode 600, and it's gone afterwards.
 5. Verify:
    - [ ] The computer object appears in UCS UMC under `cn=computers`.
-   - [ ] `/etc/sssd/sssd.conf`, `/etc/krb5.conf`, `/etc/ldap/ldap.conf`,
+   - [ ] `/etc/sssd/sssd.conf`, `/etc/krb5.conf`, `/etc/openldap/ldap.conf`
+     (`ldapsearch -x -ZZ` works without `-H`/`-b`),
      `/etc/machine.secret` (mode 600) were written.
    - [ ] `/etc/pam.d/system-login` and `/etc/security/group.conf` each
      contain exactly one `univention-arch-connector` marker block, and
@@ -60,11 +65,16 @@ LDAP, login manager behavior at the greeter) needs a real lab setup.
 
 ## Options
 
-7. On a second clean VM, test `--force-ucs-dns`:
-   - [ ] Nameservers point at the UCS DC afterward.
+7. On a second clean VM, test `--force-ucs-dns`, once with systemd-resolved
+   and once with NetworkManager without systemd-resolved:
+   - [ ] Nameservers point at the UCS DC afterward, also after a reboot.
    - [ ] `_domaincontroller_master._tcp.<domain>` SRV resolves.
+   - [ ] `--leave-domain` removes the drop-in under
+     `/etc/systemd/resolved.conf.d/` or `/etc/NetworkManager/conf.d/`.
 8. Test `--skip-login-manager`:
    - [ ] No login-manager conflict check or config file is touched.
+   - [ ] With an unknown login manager (e.g. plasma-login-manager), the join
+     only warns, and domain users can log in at its greeter.
 9. Test `--leave-domain`:
    - [ ] Marker blocks removed from `system-auth`/`system-login`/`group.conf`/`nsswitch.conf`.
    - [ ] `sssd.conf`, `krb5.conf`, `ldap.conf` restored to their pre-join
