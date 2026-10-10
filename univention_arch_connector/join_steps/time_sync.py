@@ -11,7 +11,8 @@
 # are relied upon - but unlike upstream's unguarded call, a failure here is
 # logged and treated as non-fatal rather than aborting the whole join,
 # since a client whose clock is already reasonably close to the DC's can
-# often still complete the join. See ../../NOTICE.md.
+# often still complete the join. Containers share the host's clock and
+# can't set it, so time sync is skipped there. See ../../NOTICE.md.
 
 import logging
 import shutil
@@ -25,7 +26,9 @@ TIMEOUT_SECONDS = 15
 
 
 def sync_time(dc_ip: str) -> None:
-    if shutil.which('chronyd'):
+    if _running_in_container():
+        userinfo_logger.info('Running in a container, which uses the host\'s clock; skipping time synchronization')
+    elif shutil.which('chronyd'):
         _sync_via_chrony(dc_ip)
     elif shutil.which('ntpd'):
         _sync_via_ntpd(dc_ip)
@@ -34,6 +37,13 @@ def sync_time(dc_ip: str) -> None:
             'Neither chrony nor ntp is installed; skipping time synchronization with the '
             'domain controller. Kerberos authentication may fail if the clocks are too far apart.'
         )
+
+
+def _running_in_container() -> bool:
+    try:
+        return subprocess.run(['systemd-detect-virt', '--container', '--quiet'], check=False).returncode == 0
+    except OSError:
+        return False
 
 
 @execute_as_root

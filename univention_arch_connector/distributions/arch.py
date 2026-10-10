@@ -17,7 +17,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from univention_arch_connector.distributions import AbstractJoiner, DcResolveException
+from univention_arch_connector.distributions import AbstractJoiner, DcResolveException, DomainJoinException
 from univention_arch_connector.join_steps.dns_configurator import DnsConfigurator
 from univention_arch_connector.join_steps.kerberos_configurator import KerberosConfigurator
 from univention_arch_connector.join_steps.ldap_configurator import LdapConfigurator
@@ -43,6 +43,7 @@ UCR_SCALAR_VARIABLES = [
     'kerberos/realm',
 ]
 UCR_NAMESERVER_VARIABLES = ['nameserver1', 'nameserver2', 'nameserver3']
+UCR_REQUIRED_VARIABLES = ['domainname', 'ldap/master', 'ldap/base', 'kerberos/realm']
 
 
 def is_arch_based() -> bool:
@@ -73,6 +74,7 @@ def get_ucr_variables_from_dc(dc_ip: str, admin_username: str, admin_pw: str) ->
     once per key over SSH.
     """
     values: Dict[str, str] = {}
+    last_error = ''
     for key in UCR_SCALAR_VARIABLES + UCR_NAMESERVER_VARIABLES:
         cmd = ['/usr/sbin/ucr', 'get', key]
         ssh_process = ssh(admin_username, admin_pw, dc_ip, cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -82,7 +84,17 @@ def get_ucr_variables_from_dc(dc_ip: str, admin_username: str, admin_pw: str) ->
             if value:
                 values[key] = value
         else:
-            debug_logger.debug('ucr get %s failed: %s', key, stderr.decode(errors='replace'))
+            last_error = stderr.decode(errors='replace').strip()
+            debug_logger.debug('ucr get %s failed: %s', key, last_error)
+
+    missing = [key for key in UCR_REQUIRED_VARIABLES if key not in values]
+    if missing:
+        raise DomainJoinException(
+            'Could not read %s from the domain controller via `ucr get`%s. '
+            'Is %s a UCS domain controller?' % (
+                ', '.join(missing), ' (%s)' % (last_error,) if last_error else '', dc_ip,
+            )
+        )
     return values
 
 

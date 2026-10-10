@@ -2,11 +2,12 @@
 # SPDX-FileCopyrightText: 2017-2025 Univention GmbH
 # SPDX-License-Identifier: AGPL-3.0-only
 #
-# Ported verbatim from univention-domain-join (upstream module:
+# Ported from univention-domain-join (upstream module:
 # univention_domain_join/utils/ldap.py). All of this talks exclusively to
 # the remote UCS domain controller over SSH and makes no assumptions about
-# the client's Linux distribution, so no changes were needed for the Arch
-# Linux port. See ../../NOTICE.md.
+# the client's Linux distribution, so no Arch-specific changes were needed.
+# One hardening change: a failed `kinit` in authenticate_admin() aborts the
+# join instead of only being logged. See ../../NOTICE.md.
 
 import subprocess
 from logging import getLogger
@@ -15,6 +16,7 @@ from typing import Tuple
 
 from ldap.filter import filter_format
 
+from univention_arch_connector.distributions import DomainJoinException
 from univention_arch_connector.utils.general import ssh
 
 PW = "/dev/shm/{}domain-join".format
@@ -27,6 +29,12 @@ def authenticate_admin(dc_ip: str, admin_username: str, admin_pw: str) -> None:
     _, stderr = ssh_process.communicate(admin_pw.encode())
     if ssh_process.returncode or stderr:
         log.debug("%r returned %d: %s", cmd, ssh_process.returncode, stderr.decode())
+    if ssh_process.returncode:
+        raise DomainJoinException(
+            'Could not get a Kerberos ticket as %s on the domain controller: %s' % (
+                admin_username, stderr.decode(errors='replace').strip() or 'kinit failed',
+            )
+        )
 
 
 def cleanup_authentication(dc_ip: str, admin_username: str, admin_pw: str) -> None:
