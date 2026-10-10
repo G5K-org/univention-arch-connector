@@ -22,7 +22,7 @@ from typing import Optional
 from univention_arch_connector.join_steps.nsswitch_configurator import NSSWITCH_CONF, NsswitchConfigurator
 from univention_arch_connector.join_steps.pam_configurator import GROUP_CONF, PamConfigurator, SYSTEM_AUTH, SYSTEM_LOGIN
 from univention_arch_connector.join_steps.sssd_configurator import SSSD_CONF
-from univention_arch_connector.utils.backup import find_latest_backup_dir, load_manifest, restore_file
+from univention_arch_connector.utils.backup import entries_for_leave, find_latest_backup_dir, load_manifest, restore_file
 from univention_arch_connector.utils.general import execute_as_root
 
 userinfo_logger = logging.getLogger('userinfo')
@@ -54,15 +54,15 @@ def leave_domain(backup_dir: Optional[Path] = None) -> None:
             )
 
     userinfo_logger.info('Leaving the domain using the backup at %s', backup_dir)
-    manifest = load_manifest(backup_dir)
+    entries = entries_for_leave(backup_dir)
 
     PamConfigurator().remove()
     NsswitchConfigurator().remove()
 
-    for entry in manifest:
+    for entry, entry_backup_dir in entries:
         if entry['original_path'] in _MARKER_BASED_PATHS:
             continue
-        restore_file(entry, backup_dir)
+        restore_file(entry, entry_backup_dir)
 
     _reload_services()
 

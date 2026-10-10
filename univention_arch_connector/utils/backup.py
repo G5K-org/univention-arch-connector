@@ -14,7 +14,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from shutil import copy2, rmtree
-from typing import List, Optional, TypedDict
+from typing import List, Optional, Tuple, TypedDict
 
 from univention_arch_connector.utils.general import execute_as_root
 
@@ -131,6 +131,29 @@ def find_latest_backup_dir() -> Optional[Path]:
         if _taken_before_join(backup_dir):
             return backup_dir
     return None
+
+
+def entries_for_leave(backup_dir: Path) -> List[Tuple[ManifestEntry, Path]]:
+    """Manifest entries to restore when leaving, each with the backup dir
+    holding its copy: those of ``backup_dir``, plus files that only later
+    backups (taken by re-joins, possibly by a newer version of this tool)
+    recorded. For every file, the oldest recorded state wins - for a file a
+    re-join touched for the first time, that is its state before joining.
+    """
+    entries: List[Tuple[ManifestEntry, Path]] = []
+    seen = set()
+    for candidate in reversed(_backup_dirs_newest_first()):
+        if candidate < backup_dir:
+            continue
+        try:
+            manifest = load_manifest(candidate)
+        except (OSError, ValueError):
+            continue
+        for entry in manifest:
+            if entry['original_path'] not in seen:
+                seen.add(entry['original_path'])
+                entries.append((entry, candidate))
+    return entries
 
 
 def _prune_old_backups_impl() -> None:

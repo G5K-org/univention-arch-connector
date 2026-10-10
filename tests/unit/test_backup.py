@@ -188,3 +188,27 @@ def test_backup_dirs_are_private(tmp_path, monkeypatch):
     assert root.stat().st_mode & 0o777 == 0o700
     assert b.backup_dir.stat().st_mode & 0o777 == 0o700
     assert json.loads((b.backup_dir / backup_mod.META_FILE).read_text()) == {'joined_before': True}
+
+
+def test_leave_also_restores_files_only_a_later_rejoin_recorded(tmp_path, monkeypatch):
+    # Pre-join backup by an older version that didn't touch openldap's
+    # ldap.conf; a later re-join by a newer version recorded it first.
+    monkeypatch.setattr(backup_mod, 'BACKUP_ROOT', tmp_path)
+    pre_join = _make_backup(tmp_path, '20250101T000000Z', joined_before=False)
+    rejoin = _make_backup(tmp_path, '20250102T000000Z', joined_before=True)
+
+    def entry(path, action):
+        return {'original_path': path, 'backup_relpath': path.lstrip('/'), 'action': action, 'sha256_before': None}
+
+    (pre_join / 'manifest.json').write_text(json.dumps([entry('/etc/krb5.conf', 'modified')]))
+    (rejoin / 'manifest.json').write_text(json.dumps([
+        entry('/etc/krb5.conf', 'modified'),  # already the joined state - must not win
+        entry('/etc/openldap/ldap.conf', 'modified'),
+    ]))
+
+    entries = backup_mod.entries_for_leave(pre_join)
+
+    assert [(e['original_path'], d) for e, d in entries] == [
+        ('/etc/krb5.conf', pre_join),
+        ('/etc/openldap/ldap.conf', rejoin),
+    ]

@@ -5,10 +5,11 @@
 #
 # Lightly adapted from univention-domain-join (upstream module:
 # univention_domain_join/join_steps/ldap_configurator.py). This module
-# talks to the remote UCS domain controller over SSH and writes two local,
-# distro-agnostic files (/etc/ldap/ldap.conf, /etc/machine.secret), so most
-# of it needed no change. The two adaptations: the machine is registered in
-# UCS under the generic `computers/linux` UDM type instead of
+# talks to the remote UCS domain controller over SSH and writes two local
+# files, ldap.conf and /etc/machine.secret, so most of it needed no change.
+# ldap.conf goes to /etc/openldap/ldap.conf, where Arch's OpenLDAP reads it,
+# instead of Debian's /etc/ldap/ldap.conf. Further adaptations: the machine
+# is registered in UCS under the generic `computers/linux` UDM type instead of
 # `computers/ubuntu` (Arch has no dedicated upstream UDM type - see
 # utils/ldap.py), and OS name/version are read from /etc/os-release instead
 # of Debian's lsb_release. See ../../NOTICE.md.
@@ -28,7 +29,7 @@ from univention_arch_connector.utils.ldap import PW, get_machines_udm
 userinfo_logger = logging.getLogger('userinfo')
 debug_logger = logging.getLogger('debugging')
 
-LDAP_CONF = Path('/etc/ldap/ldap.conf')
+LDAP_CONF = Path('/etc/openldap/ldap.conf')
 MACHINE_SECRET = Path('/etc/machine.secret')
 
 
