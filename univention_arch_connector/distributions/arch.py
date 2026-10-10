@@ -74,7 +74,7 @@ def get_ucr_variables_from_dc(dc_ip: str, admin_username: str, admin_pw: str) ->
     """
     values: Dict[str, str] = {}
     for key in UCR_SCALAR_VARIABLES + UCR_NAMESERVER_VARIABLES:
-        cmd = ['ucr', 'get', key]
+        cmd = ['/usr/sbin/ucr', 'get', key]
         ssh_process = ssh(admin_username, admin_pw, dc_ip, cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = ssh_process.communicate()
         if ssh_process.returncode == 0:
