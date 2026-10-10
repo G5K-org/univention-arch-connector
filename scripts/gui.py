@@ -12,6 +12,7 @@
 import logging
 import queue
 import sys
+from pathlib import Path
 from typing import List, Optional
 
 from PyQt5.QtCore import QObject, Qt, QThread, pyqtSignal
@@ -27,6 +28,25 @@ from univention_arch_connector.utils.host_key import pin_host_keys
 
 userinfo_logger = logging.getLogger('userinfo')
 debug_logger = logging.getLogger('debugging')
+
+LOGFILE = Path('/var/log/univention-arch-connector/domain-join-gui.log')
+
+
+def set_up_file_logging() -> None:
+    """Keep the log, including error details, for troubleshooting - the
+    window only shows the progress messages.
+    """
+    try:
+        LOGFILE.parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(LOGFILE)
+    except OSError as exc:
+        print('Not logging to %s: %s' % (LOGFILE, exc), file=sys.stderr)
+        return
+    handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s'))
+    userinfo_logger.setLevel(logging.INFO)
+    userinfo_logger.addHandler(handler)
+    debug_logger.setLevel(logging.DEBUG)
+    debug_logger.addHandler(handler)
 
 
 class QueueLogHandler(logging.Handler):
@@ -237,10 +257,11 @@ class DomainJoinDialog(QDialog):
             self.shares_button.setEnabled(True)
             QMessageBox.information(self, 'Success', 'Domain join successful. Please reboot this machine.')
         else:
-            QMessageBox.critical(self, 'Domain join failed', error_message)
+            QMessageBox.critical(self, 'Domain join failed', '%s\n\nDetails: %s' % (error_message, LOGFILE))
 
 
 def main() -> None:
+    set_up_file_logging()
     app = QApplication(sys.argv)
     # Lets Wayland compositors match the window to its .desktop entry/icon.
     app.setDesktopFileName('univention-arch-connector')
