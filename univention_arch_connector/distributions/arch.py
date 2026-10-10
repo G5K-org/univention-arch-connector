@@ -25,7 +25,7 @@ from univention_arch_connector.join_steps.login_manager_configurator import Logi
 from univention_arch_connector.join_steps.nsswitch_configurator import NsswitchConfigurator
 from univention_arch_connector.join_steps.pam_configurator import PamConfigurator
 from univention_arch_connector.join_steps.sssd_configurator import SssdConfigurator
-from univention_arch_connector.utils.backup import Backup
+from univention_arch_connector.utils.backup import Backup, prune_old_backups
 from univention_arch_connector.utils.general import execute_as_root, name_is_resolvable, ssh
 from univention_arch_connector.utils.ldap import authenticate_admin, cleanup_authentication, is_samba_dc
 
@@ -138,7 +138,7 @@ class ArchJoiner(AbstractJoiner):
 
     @execute_as_root
     def create_backup_of_config_files(self) -> None:
-        self.backup = Backup.create()
+        self.backup = Backup.create(joined_before=self.pam_configurator.is_configured())
         if self.force_ucs_dns:
             self.dns_configurator.backup(self.backup)
         self.ldap_configurator.backup(self.backup)
@@ -148,6 +148,7 @@ class ArchJoiner(AbstractJoiner):
         self.login_manager_configurator.backup(self.backup, self.skip_login_manager)
         self.kerberos_configurator.backup(self.backup)
         self.backup.write_manifest()
+        prune_old_backups()
         userinfo_logger.info('Backup of changed configuration files: %s', self.backup.backup_dir)
 
     def join_domain(self) -> None:

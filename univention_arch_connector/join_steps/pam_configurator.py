@@ -126,6 +126,16 @@ class PamConfigurator:
         backup.backup_file(str(SYSTEM_LOGIN))
         backup.backup_file(str(GROUP_CONF))
 
+    def is_configured(self) -> bool:
+        """Whether a previous join's marker blocks are in place, i.e. this
+        system is currently joined.
+        """
+        begin = '# BEGIN %s' % (MKHOMEDIR_MARKER,)
+        try:
+            return any(line.rstrip('\n') == begin for line in SYSTEM_LOGIN.read_text().splitlines())
+        except OSError:
+            return False
+
     def setup_pam(self) -> None:
         self.enable_pam_sss()
         self.configure_home_dir_creation()

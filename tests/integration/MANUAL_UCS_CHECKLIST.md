@@ -70,6 +70,11 @@ LDAP, login manager behavior at the greeter) needs a real lab setup.
    - [ ] `sssd.conf`, `krb5.conf`, `ldap.conf` restored to their pre-join
      state (or removed, if they didn't exist before).
    - [ ] The UCS CA trust anchor is removed.
+   - [ ] Also after joining twice in a row: `--leave-domain` uses the
+     backup from before the first join, so `sssd.conf` and the CA are
+     removed rather than restored.
+   - [ ] `/var/univention-arch-connector-backup` is mode 700, and backups
+     older than the pre-join one were removed.
    - [ ] The domain user can no longer log in; local users are unaffected.
    - [ ] The computer object in UCS was **not** removed automatically (by
      design) - confirm the tool logged a reminder to do it manually.

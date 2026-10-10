@@ -226,3 +226,17 @@ def test_enable_pam_sss_idempotent_and_removable(monkeypatch, tmp_path: Path) ->
     for pam_type, _, _, _ in pc.SSS_BLOCKS:
         pc._remove_marked_block(path, pc.SSS_MARKER % (pam_type,))
     assert path.read_text() == REAL_SYSTEM_AUTH
+
+
+def test_is_configured_detects_a_previous_join(monkeypatch, tmp_path: Path) -> None:
+    path = tmp_path / 'system-login'
+    path.write_text(REAL_SYSTEM_LOGIN)
+    monkeypatch.setattr(pc, 'SYSTEM_LOGIN', path)
+    assert not pc.PamConfigurator().is_configured()
+
+    pc._insert_marked_block(
+        path, pc.MKHOMEDIR_MARKER,
+        anchor_pattern=r'^session\s+include\s+system-auth\s*$',
+        block_lines=[pc.MKHOMEDIR_LINE],
+    )
+    assert pc.PamConfigurator().is_configured()
