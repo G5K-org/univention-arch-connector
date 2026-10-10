@@ -22,15 +22,14 @@ from typing import Tuple
 
 from univention_arch_connector.join_steps.root_certificate_provider import CA_CERT_PATH, RootCertificateProvider
 from univention_arch_connector.utils.backup import Backup
-from univention_arch_connector.utils.general import execute_as_root, ssh
-from univention_arch_connector.utils.ldap import get_machines_udm
+from univention_arch_connector.utils.general import execute_as_root, short_hostname, ssh
+from univention_arch_connector.utils.ldap import PW, get_machines_udm
 
 userinfo_logger = logging.getLogger('userinfo')
 debug_logger = logging.getLogger('debugging')
 
 LDAP_CONF = Path('/etc/ldap/ldap.conf')
 MACHINE_SECRET = Path('/etc/machine.secret')
-PW = "/dev/shm/{}domain-join".format
 
 
 def _os_release_info() -> Tuple[str, str]:
@@ -105,7 +104,7 @@ class LdapConfigurator(ConflictChecker):
     def add_machine_to_ldap(
         self, dc_ip: str, admin_username: str, admin_pw: str, admin_dn: str, ldap_base: str, machine_password: str,
     ) -> str:
-        hostname = os.uname().nodename
+        hostname = short_hostname()
         os_name, os_version = _os_release_info()
         userinfo_logger.info('Creating the computer object "%s" in UCS', hostname)
         position = 'cn=computers,%s' % (ldap_base,)

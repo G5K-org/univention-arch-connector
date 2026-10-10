@@ -50,6 +50,13 @@ def execute_as_root(func: F) -> F:
     return cast(F, root_wrapper)
 
 
+def short_hostname() -> str:
+    """This machine's name without domain, as UCS computer objects are
+    named - /etc/hostname may contain the FQDN.
+    """
+    return socket.gethostname().split('.', 1)[0]
+
+
 def name_is_resolvable(name: str) -> bool:
     try:
         return bool(socket.getaddrinfo(name, 22, socket.AF_UNSPEC, socket.SOCK_STREAM, socket.IPPROTO_TCP))

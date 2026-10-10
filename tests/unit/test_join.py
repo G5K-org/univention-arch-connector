@@ -98,3 +98,42 @@ def test_time_sync_is_skipped_in_containers(monkeypatch):
     monkeypatch.setattr(time_sync, '_running_in_container', lambda: True)
     monkeypatch.setattr(time_sync, '_sync_via_chrony', MagicMock(side_effect=AssertionError('should not sync')))
     time_sync.sync_time('192.0.2.10')
+
+
+def test_computer_objects_are_looked_up_by_short_hostname(monkeypatch):
+    from univention_arch_connector.utils import general
+    monkeypatch.setattr(general.socket, 'gethostname', lambda: 'client.site.example.com')
+    commands = []
+
+    def results(command):
+        commands.append(command)
+        return (0, b'', b'')
+    process_ssh = _fake_ssh(results)
+
+    def ssh(*args, **kwargs):
+        process = process_ssh(*args, **kwargs)
+        process.stdout = iter([b'DN: cn=client,cn=computers,dc=example,dc=com\n'])
+        return process
+    monkeypatch.setattr(ldap, 'ssh', ssh)
+
+    ldap.get_machines_ldap_dn_given_the_udm_type('computers/linux', '192.0.2.10', 'Administrator', 'secret', 'uid=Administrator')
+    assert commands[0][-1] == 'name=client'
+
+
+def test_admin_password_file_is_private_and_unpredictable():
+    path = ldap.PW('Administrator')
+    assert path.startswith('/dev/shm/univention-arch-connector-') and len(path) > len('/dev/shm/univention-arch-connector-') + 16
+    assert 'Administrator' not in path
+
+
+def test_admin_password_file_is_created_private_and_never_overwritten(monkeypatch):
+    commands = []
+
+    def results(command):
+        commands.append(command)
+        return (0, b'', b'')
+    monkeypatch.setattr(ldap, 'ssh', _fake_ssh(results))
+
+    ldap.authenticate_admin('192.0.2.10', 'Administrator', 'secret')
+    script = commands[0][4]
+    assert script.startswith('umask 077; set -C; ')
