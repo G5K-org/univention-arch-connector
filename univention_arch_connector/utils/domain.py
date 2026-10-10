@@ -7,15 +7,47 @@
 # already assumes systemd-resolved, which matches Arch exactly, so the only
 # change is replacing the `IPy` dependency (not packaged for Arch) with the
 # stdlib `ipaddress` module, and `Resolver.query` (removed in modern
-# dnspython) with its replacement `Resolver.resolve`. See ../../NOTICE.md.
+# dnspython) with its replacement `Resolver.resolve`.
+#
+# Two Arch-port additions: a host's DNS domain is often a subdomain of the
+# UCS domain (e.g. host.site.example.com in UCS domain example.com), so
+# candidate domains are walked up towards the root until one has the UCS
+# `_domaincontroller_master._tcp` SRV record (find_ucs_domain()). And since
+# not every Arch system runs systemd-resolved, get_nameservers() falls back
+# to /etc/resolv.conf. See ../../NOTICE.md.
 
 import ipaddress
+import re
 import socket
 import subprocess
+from pathlib import Path
 from typing import Iterable, List, Set
 
 import dns.resolver
 import netifaces
+
+
+RESOLV_CONF = Path('/etc/resolv.conf')
+
+
+def has_ucs_master_srv_record(domain: str) -> bool:
+    try:
+        dns.resolver.Resolver().resolve('_domaincontroller_master._tcp.%s.' % (domain,), 'SRV')
+    except Exception:
+        return False
+    return True
+
+
+def find_ucs_domain(domain: str) -> str:
+    """Return ``domain`` or its closest parent domain that is a UCS
+    domain, or "" if none is. The bare top-level domain is never tried.
+    """
+    labels = domain.strip('.').split('.')
+    for i in range(len(labels) - 1):
+        candidate = '.'.join(labels[i:])
+        if has_ucs_master_srv_record(candidate):
+            return candidate
+    return ""
 
 
 def get_master_ip_through_dns(domain: str) -> str:
@@ -42,7 +74,7 @@ def get_ucs_domainname_via_local_configuration() -> str:
         domainname = socket.getfqdn().split('.', 1)[1]
     except Exception:
         return ""
-    return domainname
+    return find_ucs_domain(domainname)
 
 
 def get_ucs_domainname_via_reverse_dns() -> str:
@@ -54,19 +86,52 @@ def get_ucs_domainname_of_dns_server() -> str:
 
 
 def get_nameservers() -> Set[str]:
-    output = subprocess.check_output(['resolvectl'])
+    try:
+        output = subprocess.check_output(['resolvectl'], stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError):
+        return get_nameservers_from_resolv_conf()
 
-    nameservers = set()
-    last_line_was_dns_servers_line = False
-    for line in output.decode().splitlines():
-        if last_line_was_dns_servers_line and is_only_ip(line):
-            nameservers.add(line.strip())
+    return parse_resolvectl_nameservers(output.decode())
 
-        if 'DNS Servers:' in line:
-            last_line_was_dns_servers_line = True
-            nameservers.add(line.split('DNS Servers:')[1].strip())
+
+def parse_resolvectl_nameservers(output: str) -> Set[str]:
+    """Collect the "DNS Servers:" of `resolvectl` output, including
+    continuation lines. "Fallback DNS Servers:" (resolved's built-in public
+    resolvers) are skipped, they can't know about the UCS domain.
+    """
+    nameservers: Set[str] = set()
+    in_dns_servers = False
+    for line in output.splitlines():
+        # "Label: value" - the colon of a label is followed by whitespace,
+        # which never happens inside an IPv6 address.
+        match = re.match(r'^\s*([^:\s][^:]*):(?:\s+|$)(.*)$', line)
+        if match:
+            in_dns_servers = match.group(1).strip() == 'DNS Servers'
+            values = match.group(2)
         else:
-            last_line_was_dns_servers_line = False
+            values = line
+        if in_dns_servers:
+            for token in values.split():
+                address = _strip_resolved_suffixes(token)
+                if is_only_ip(address):
+                    nameservers.add(address)
+    return nameservers
+
+
+def _strip_resolved_suffixes(token: str) -> str:
+    return token.strip().split('#', 1)[0].split('%', 1)[0]
+
+
+def get_nameservers_from_resolv_conf() -> Set[str]:
+    nameservers: Set[str] = set()
+    try:
+        lines = RESOLV_CONF.read_text().splitlines()
+    except OSError:
+        return nameservers
+    for line in lines:
+        fields = line.split()
+        if len(fields) >= 2 and fields[0] == 'nameserver' and is_only_ip(fields[1]):
+            nameservers.add(fields[1])
     return nameservers
 
 
@@ -119,12 +184,8 @@ def ips2name(addrs: Iterable[str]) -> str:
 
 
 def get_ucs_domainname_from_fqdn(fqdn: str) -> str:
-    try:
-        domainname = fqdn.split('.', 1)[1]
-        # Check if the _domaincontroller_master._tcp record exists, to ensure
-        # that this is an UCS domain.
-        resolver = dns.resolver.Resolver()
-        resolver.resolve('_domaincontroller_master._tcp.%s' % (domainname,), 'SRV')
-    except Exception:
+    if '.' not in fqdn:
         return ""
-    return domainname
+    # Only accept domains with a _domaincontroller_master._tcp record, to
+    # ensure that this is an UCS domain.
+    return find_ucs_domain(fqdn.split('.', 1)[1])
