@@ -5,9 +5,11 @@
 #
 # Ported from univention-domain-join (upstream module:
 # univention_domain_join/join_steps/kerberos_configurator.py). The
-# krb5.conf content/syntax is identical between Heimdal (upstream) and MIT
-# krb5 (Arch's `krb5` package), so no changes were needed there. Two
-# adaptations: the time-sync call was extracted to time_sync.py (which
+# krb5.conf syntax is identical between Heimdal (upstream) and MIT krb5
+# (Arch's `krb5` package). Upstream's krb5.conf prefers RC4 and DES and sets
+# allow_weak_crypto; those lines are dropped, so MIT's defaults apply: AES
+# first, RC4 only as a fallback for accounts without AES keys, no DES.
+# Two further adaptations: the time-sync call was extracted to time_sync.py (which
 # picks chrony/ntpd instead of the no-longer-packaged `ntpdate`), and
 # backup() now delegates to the shared Backup helper instead of a manual
 # copyfile. See ../../NOTICE.md.
@@ -55,9 +57,6 @@ class KerberosConfigurator(ConflictChecker):
             '    ccache_type = 4\n' \
             '    forwardable = true\n' \
             '    proxiable = true\n' \
-            '    default_tkt_enctypes = arcfour-hmac-md5 des-cbc-md5 des3-hmac-sha1 des-cbc-crc des-cbc-md4 des3-cbc-sha1 aes128-cts-hmac-sha1-96 aes256-cts-hmac-sha1-96\n' \
-            '    permitted_enctypes = des3-hmac-sha1 des-cbc-crc des-cbc-md4 des-cbc-md5 des3-cbc-sha1 arcfour-hmac-md5 aes128-cts-hmac-sha1-96 aes256-cts-hmac-sha1-96\n' \
-            '    allow_weak_crypto = true\n' \
             '    rdns = false\n' \
             '\n' \
             '[realms]\n' \

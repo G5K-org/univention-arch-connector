@@ -7,11 +7,15 @@
 # univention_domain_join/join_steps/sssd_configurator.py). The sssd.conf
 # content itself (LDAP id_provider + Kerberos auth_provider, port 7389,
 # machine-account bind, kpasswd-server selection) is unchanged - Arch's
-# `sssd` package is the same upstream SSSD project. The only functional
+# `sssd` package is the same upstream SSSD project. One functional
 # change is dropping the Debian-only `pam-auth-update` call: pam_sss and
 # mkhomedir activation on Arch happen exclusively via pam_configurator.py, and
 # `sss` is wired into NSS via nsswitch_configurator.py instead of relying
-# on a Debian postinst script. See ../../NOTICE.md.
+# on a Debian postinst script. Also sets ldap_id_use_start_tls explicitly:
+# SSSD (2.x, tested) already uses StartTLS for the machine account's
+# password bind and fails rather than falling back to plain LDAP, but this
+# keeps encryption mandatory independent of SSSD's defaults. See
+# ../../NOTICE.md.
 
 import logging
 import subprocess
@@ -78,6 +82,7 @@ class SssdConfigurator(ConflictChecker):
             'auth_provider = krb5\n'
             'chpass_provider = krb5\n'
             'ldap_uri = ldap://%(ldap_master)s:7389/\n'
+            'ldap_id_use_start_tls = true\n'
             'ldap_search_base = %(ldap_base)s\n'
             'ldap_tls_reqcert = demand\n'
             'ldap_tls_cacert = %(ca_cert)s\n'

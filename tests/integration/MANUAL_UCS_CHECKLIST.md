@@ -55,7 +55,7 @@ LDAP, login manager behavior at the greeter) needs a real lab setup.
      (`pam_mkhomedir`).
    - [ ] `id <user>` shows the supplementary groups
      (`audio,cdrom,dialout,floppy,plugdev,adm`).
-   - [ ] `kinit <user>` and `klist` work.
+   - [ ] `kinit <user>` and `klist -e` work, with AES (not RC4/DES) enctypes.
    - [ ] `getent passwd <user>` resolves via SSSD.
 
 ## Options
