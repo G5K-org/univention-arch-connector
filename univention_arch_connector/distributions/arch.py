@@ -26,7 +26,8 @@ from univention_arch_connector.join_steps.nsswitch_configurator import NsswitchC
 from univention_arch_connector.join_steps.pam_configurator import PamConfigurator
 from univention_arch_connector.join_steps.sssd_configurator import SssdConfigurator
 from univention_arch_connector.utils.backup import Backup, prune_old_backups
-from univention_arch_connector.utils.general import execute_as_root, name_is_resolvable, ssh
+from univention_arch_connector.utils.domain import addresses_in_ucs_dns, local_addresses_of, ucs_nameservers_answering
+from univention_arch_connector.utils.general import execute_as_root, ssh
 from univention_arch_connector.utils.ldap import authenticate_admin, cleanup_authentication, is_samba_dc
 
 userinfo_logger = logging.getLogger('userinfo')
@@ -44,6 +45,11 @@ UCR_SCALAR_VARIABLES = [
 ]
 UCR_NAMESERVER_VARIABLES = ['nameserver1', 'nameserver2', 'nameserver3']
 UCR_REQUIRED_VARIABLES = ['domainname', 'ldap/master', 'ldap/base', 'kerberos/realm']
+
+FORCE_UCS_DNS_HINT = (
+    "Rerun with --force-ucs-dns (in the graphical assistant: \"Point this system's DNS at the "
+    "domain controller\"), or point this system's DNS at the UCS DNS server yourself."
+)
 
 
 def is_arch_based() -> bool:
@@ -133,6 +139,30 @@ class ArchJoiner(AbstractJoiner):
         self.machine_dn: Optional[str] = None
         self.backup: Optional[Backup] = None
 
+    def check_dc_names_resolve_to_the_dc(self, ucs_nameservers: List[str]) -> None:
+        """SSSD and Kerberos reach the DC by name, through this system's
+        resolver. If that resolves the name differently than the UCS DNS
+        (e.g. a public DNS server answering for the same domain), the join
+        would seemingly succeed but no domain user could log in.
+        """
+        for name in dict.fromkeys([self.ldap_master, self.ldap_server_name]):
+            local = local_addresses_of(name)
+            if not local:
+                raise DcResolveException(
+                    "Could not resolve the domain controller's name %s. %s" % (name, FORCE_UCS_DNS_HINT)
+                )
+            if not ucs_nameservers:
+                debug_logger.debug('No UCS DNS server reachable; cannot verify that %s resolves to the DC', name)
+                continue
+            expected = addresses_in_ucs_dns(name, ucs_nameservers[0])
+            if expected and not local & expected:
+                raise DcResolveException(
+                    '%s resolves to %s on this system, but to %s in the UCS DNS - this system uses a DNS '
+                    'server that does not know the UCS domain. %s' % (
+                        name, ', '.join(sorted(local)), ', '.join(sorted(expected)), FORCE_UCS_DNS_HINT,
+                    )
+                )
+
     def check_if_join_is_possible_without_problems(self) -> None:
         self.login_manager_configurator.check_for_conflicts(self.skip_login_manager)
 
@@ -153,15 +183,19 @@ class ArchJoiner(AbstractJoiner):
 
     def join_domain(self) -> None:
         try:
+            # The DC address we're joining through comes first: the DC
+            # serves DNS, and unlike its configured nameservers it is
+            # known to be reachable from here.
+            ucs_nameservers = ucs_nameservers_answering([self.dc_ip, *self.nameservers], self.domain)
             if self.force_ucs_dns:
-                self.dns_configurator.configure_dns(self.nameservers, self.domain)
+                if not ucs_nameservers:
+                    raise DcResolveException(
+                        'None of the UCS DNS servers (%s) answers queries for %s from this system.'
+                        % (', '.join(dict.fromkeys([self.dc_ip, *self.nameservers])), self.domain)
+                    )
+                self.dns_configurator.configure_dns(ucs_nameservers, self.domain)
                 self.dns_configurator.check_if_dns_works(self.domain)
-
-            if not name_is_resolvable(self.ldap_master) or not name_is_resolvable(self.ldap_server_name):
-                raise DcResolveException(
-                    "Could not resolve the domain controller's name (%s / %s). "
-                    "Rerun with --force-ucs-dns, or fix DNS manually." % (self.ldap_master, self.ldap_server_name)
-                )
+            self.check_dc_names_resolve_to_the_dc(ucs_nameservers)
 
             userinfo_logger.info('Authenticating as %s on the domain controller', self.admin_username)
             authenticate_admin(self.dc_ip, self.admin_username, self.admin_pw)

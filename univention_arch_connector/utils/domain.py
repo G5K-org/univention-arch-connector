@@ -50,6 +50,45 @@ def find_ucs_domain(domain: str) -> str:
     return ""
 
 
+def ucs_nameservers_answering(candidates: Iterable[str], domain: str) -> List[str]:
+    """The ``candidates`` that answer DNS queries for the UCS ``domain``,
+    in order. A DC's configured nameservers may sit on a network this
+    client can't reach (e.g. a second interface of the DC).
+    """
+    answering = []
+    for nameserver in dict.fromkeys(candidates):
+        resolver = dns.resolver.Resolver(configure=False)
+        resolver.nameservers = [nameserver]
+        resolver.lifetime = 3
+        try:
+            resolver.resolve('_domaincontroller_master._tcp.%s.' % (domain,), 'SRV')
+        except Exception:
+            continue
+        answering.append(nameserver)
+    return answering
+
+
+def addresses_in_ucs_dns(name: str, nameserver: str) -> Set[str]:
+    resolver = dns.resolver.Resolver(configure=False)
+    resolver.nameservers = [nameserver]
+    resolver.lifetime = 3
+    addresses: Set[str] = set()
+    for record_type in ('A', 'AAAA'):
+        try:
+            addresses.update(record.to_text() for record in resolver.resolve(name, record_type))
+        except Exception:
+            pass
+    return addresses
+
+
+def local_addresses_of(name: str) -> Set[str]:
+    """What this system's resolver (as used by SSSD, Kerberos) returns."""
+    try:
+        return {info[4][0] for info in socket.getaddrinfo(name, None)}
+    except OSError:
+        return set()
+
+
 def get_master_ip_through_dns(domain: str) -> str:
     resolver = dns.resolver.Resolver()
     try:

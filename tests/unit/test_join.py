@@ -137,3 +137,53 @@ def test_admin_password_file_is_created_private_and_never_overwritten(monkeypatc
     ldap.authenticate_admin('192.0.2.10', 'Administrator', 'secret')
     script = commands[0][4]
     assert script.startswith('umask 077; set -C; ')
+
+
+def _joiner_for_dns_checks(monkeypatch, local, ucs):
+    from univention_arch_connector.distributions import arch as arch_mod
+    joiner = arch_mod.ArchJoiner.__new__(arch_mod.ArchJoiner)
+    joiner.ldap_master = joiner.ldap_server_name = 'dc.example.com'
+    monkeypatch.setattr(arch_mod, 'local_addresses_of', lambda name: set(local))
+    monkeypatch.setattr(arch_mod, 'addresses_in_ucs_dns', lambda name, nameserver: set(ucs))
+    return joiner
+
+
+def test_dc_name_resolving_elsewhere_aborts_with_force_ucs_dns_hint(monkeypatch):
+    from univention_arch_connector.distributions import DcResolveException
+    # A public DNS server answering for the UCS domain, as seen on a client.
+    joiner = _joiner_for_dns_checks(monkeypatch, ['2a06:98c1:3121::'], ['10.0.0.244'])
+    with pytest.raises(DcResolveException, match='resolves to 2a06:98c1:3121:: on this system, but to 10.0.0.244.*--force-ucs-dns'):
+        joiner.check_dc_names_resolve_to_the_dc(['10.0.0.244'])
+
+
+def test_dc_name_resolving_to_the_dc_passes(monkeypatch):
+    joiner = _joiner_for_dns_checks(monkeypatch, ['10.0.0.244', 'fd00::244'], ['10.0.0.244'])
+    joiner.check_dc_names_resolve_to_the_dc(['10.0.0.244'])
+
+
+def test_dc_name_check_is_skipped_without_reachable_ucs_dns(monkeypatch):
+    joiner = _joiner_for_dns_checks(monkeypatch, ['192.0.2.1'], ['10.0.0.244'])
+    joiner.check_dc_names_resolve_to_the_dc([])
+
+
+def test_unresolvable_dc_name_aborts(monkeypatch):
+    from univention_arch_connector.distributions import DcResolveException
+    joiner = _joiner_for_dns_checks(monkeypatch, [], ['10.0.0.244'])
+    with pytest.raises(DcResolveException, match='Could not resolve'):
+        joiner.check_dc_names_resolve_to_the_dc(['10.0.0.244'])
+
+
+def test_only_answering_ucs_nameservers_are_used(monkeypatch):
+    from univention_arch_connector.utils import domain
+
+    class FakeResolver:
+        def __init__(self, configure=True):
+            self.nameservers = []
+
+        def resolve(self, name, record_type):
+            if self.nameservers != ['10.0.0.244']:  # e.g. the DC's second, unreachable interface
+                raise Exception('timeout')
+            return []
+
+    monkeypatch.setattr(domain.dns.resolver, 'Resolver', FakeResolver)
+    assert domain.ucs_nameservers_answering(['10.0.0.244', '10.1.0.1', '10.0.0.244'], 'example.com') == ['10.0.0.244']

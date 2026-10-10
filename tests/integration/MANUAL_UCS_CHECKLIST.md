@@ -26,6 +26,11 @@ LDAP, login manager behavior at the greeter) needs a real lab setup.
      `--dc-fingerprint` is given; a wrong fingerprint is rejected.
    - [ ] Without `--dc-ip`, the domain is auto-detected, also when the
      client's DNS domain is a subdomain of the UCS domain.
+   - [ ] Run through `sudo` (or `./start.sh` as a normal user), not as
+     root: the join, a failing join's rollback and `--leave-domain` work.
+   - [ ] On a client whose DNS server doesn't know the UCS domain (e.g. the
+     router's), the join aborts and suggests `--force-ucs-dns`; with it,
+     the join succeeds and SSSD is online (`sssctl domain-status`).
    - [ ] With the FQDN in `/etc/hostname`, the computer object is still
      named (and found) by the short hostname.
    - [ ] While the join runs, `/dev/shm/univention-arch-connector-*` on the
