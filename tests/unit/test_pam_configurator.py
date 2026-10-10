@@ -140,3 +140,89 @@ def test_group_conf_append_idempotent(monkeypatch, tmp_path: Path) -> None:
 
     content = group_conf.read_text()
     assert content.count(pc.GROUP_CONF_LINE.rstrip('\n')) == 1
+
+
+# Captured from Arch's pambase package, 2026-10.
+REAL_SYSTEM_AUTH = """\
+#%PAM-1.0
+
+auth       required                    pam_faillock.so      preauth
+# Optionally use requisite above if you do not want to prompt for the password
+# on locked accounts.
+-auth      [success=2 default=ignore]  pam_systemd_home.so
+auth       [success=1 default=bad]     pam_unix.so          try_first_pass nullok
+auth       [default=die]               pam_faillock.so      authfail
+auth       optional                    pam_permit.so
+auth       required                    pam_env.so
+auth       required                    pam_faillock.so      authsucc
+# If you drop the above call to pam_faillock.so the lock will be done also
+# on non-consecutive authentication failures.
+
+-account   [success=1 default=ignore]  pam_systemd_home.so
+account    required                    pam_unix.so
+account    optional                    pam_permit.so
+account    required                    pam_time.so
+
+-password  [success=1 default=ignore]  pam_systemd_home.so
+password   required                    pam_unix.so          try_first_pass nullok shadow
+password   optional                    pam_permit.so
+
+-session   optional                    pam_systemd_home.so
+session    required                    pam_limits.so
+session    required                    pam_unix.so
+session    optional                    pam_permit.so
+"""
+
+
+def _enable_pam_sss() -> None:
+    # Bypass @execute_as_root so the test also runs unprivileged (makepkg check()).
+    pc.PamConfigurator.enable_pam_sss.__wrapped__(pc.PamConfigurator())
+
+
+def _module_lines(text: str) -> list:
+    return [line for line in text.splitlines() if line and not line.startswith('#')]
+
+
+def test_enable_pam_sss_keeps_success_jumps_intact(monkeypatch, tmp_path: Path) -> None:
+    path = tmp_path / 'system-auth'
+    path.write_text(REAL_SYSTEM_AUTH)
+    monkeypatch.setattr(pc, 'SYSTEM_AUTH', path)
+
+    _enable_pam_sss()
+
+    lines = _module_lines(path.read_text())
+    # For auth/account/password, pam_sss sits directly in front of
+    # pam_systemd_home, so pambase's relative [success=N] jumps (which only
+    # count lines *after* themselves) are unaffected.
+    for pam_type in ('auth', 'account', 'password'):
+        type_lines = [line for line in lines if line.lstrip('-').startswith(pam_type)]
+        sss_idx = next(i for i, line in enumerate(type_lines) if 'pam_sss.so' in line)
+        assert 'pam_systemd_home.so' in type_lines[sss_idx + 1]
+    session = [line for line in lines if line.startswith('session')]
+    assert session[session.index('session    required                    pam_unix.so') + 1].split()[2] == 'pam_sss.so'
+
+
+def test_enable_pam_sss_auth_runs_after_faillock_preauth(monkeypatch, tmp_path: Path) -> None:
+    path = tmp_path / 'system-auth'
+    path.write_text(REAL_SYSTEM_AUTH)
+    monkeypatch.setattr(pc, 'SYSTEM_AUTH', path)
+
+    _enable_pam_sss()
+
+    lines = _module_lines(path.read_text())
+    preauth = lines.index('auth       required                    pam_faillock.so      preauth')
+    assert 'pam_sss.so' in lines[preauth + 1]
+
+
+def test_enable_pam_sss_idempotent_and_removable(monkeypatch, tmp_path: Path) -> None:
+    path = tmp_path / 'system-auth'
+    path.write_text(REAL_SYSTEM_AUTH)
+    monkeypatch.setattr(pc, 'SYSTEM_AUTH', path)
+
+    _enable_pam_sss()
+    _enable_pam_sss()
+    assert path.read_text().count('pam_sss.so') == 4
+
+    for pam_type, _, _, _ in pc.SSS_BLOCKS:
+        pc._remove_marked_block(path, pc.SSS_MARKER % (pam_type,))
+    assert path.read_text() == REAL_SYSTEM_AUTH

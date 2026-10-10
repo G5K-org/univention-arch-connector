@@ -8,8 +8,8 @@
 # content itself (LDAP id_provider + Kerberos auth_provider, port 7389,
 # machine-account bind, kpasswd-server selection) is unchanged - Arch's
 # `sssd` package is the same upstream SSSD project. The only functional
-# change is dropping the Debian-only `pam-auth-update` call: mkhomedir
-# activation on Arch happens exclusively via pam_configurator.py, and
+# change is dropping the Debian-only `pam-auth-update` call: pam_sss and
+# mkhomedir activation on Arch happen exclusively via pam_configurator.py, and
 # `sss` is wired into NSS via nsswitch_configurator.py instead of relying
 # on a Debian postinst script. See ../../NOTICE.md.
 
