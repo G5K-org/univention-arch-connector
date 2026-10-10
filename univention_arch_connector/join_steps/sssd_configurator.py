@@ -17,8 +17,14 @@
 # keeps encryption mandatory independent of SSSD's defaults. And stores
 # Kerberos tickets at MIT's default location /tmp/krb5cc_<uid> instead of
 # SSSD's randomized name: mounting shares at login (shares.py) runs as root,
-# and cifs.upcall then only looks at the default location. See
-# ../../NOTICE.md.
+# and cifs.upcall then only looks at the default location.
+#
+# Optionally (set_domain_users_listed) SSSD lists domain users, so login
+# screens - which build their user list from NSS - show them. Like
+# upstream's enumerate = true, but restricted to active, visible person
+# accounts: UCS also has machine accounts (uid ending in $), hidden
+# service accounts and disabled ones (krbtgt, Guest) in the UID range
+# login screens show. See ../../NOTICE.md.
 
 import logging
 import subprocess
@@ -32,6 +38,15 @@ userinfo_logger = logging.getLogger('userinfo')
 
 SSSD_CONF = Path('/etc/sssd/sssd.conf')
 CCNAME_TEMPLATE = 'FILE:/tmp/krb5cc_%U'
+# Accounts shown on login screens when domain users are listed.
+LISTED_USERS_FILTER = '(&(objectClass=inetOrgPerson)(!(univentionObjectFlag=hidden))(!(shadowExpire=1)))'
+
+
+@execute_as_root
+def is_joined() -> bool:
+    # As root: /etc/sssd isn't readable for others, so as the sudo caller
+    # the file would always seem to be missing.
+    return SSSD_CONF.exists()
 
 
 def _key(line: str) -> str:
@@ -62,7 +77,11 @@ class SssdConfigurator(ConflictChecker):
         ldap_server_name: str,
         is_samba_dc: bool,
     ) -> None:
+        # A re-join keeps the login screen setting.
+        listed = self.domain_users_listed()
         self.write_sssd_conf(domain, ldap_master, ldap_base, machine_dn, machine_password, kerberos_realm, ldap_server_name, is_samba_dc)
+        if listed:
+            self.set_domain_users_listed(True, restart=False)
         self.restart_sssd()
 
     @execute_as_root
@@ -123,6 +142,46 @@ class SssdConfigurator(ConflictChecker):
         SSSD_CONF.parent.mkdir(parents=True, exist_ok=True)
         SSSD_CONF.write_text(config)
         SSSD_CONF.chmod(0o600)
+
+    @execute_as_root
+    def domain_users_listed(self) -> bool:
+        if not SSSD_CONF.exists():
+            return False
+        return any(_key(line) == 'enumerate' and line.split('=', 1)[1].strip() == 'true'
+                   for line in SSSD_CONF.read_text().splitlines())
+
+    @execute_as_root
+    def set_domain_users_listed(self, listed: bool, restart: bool = True) -> None:
+        """List (or stop listing) domain users via NSS, e.g. on login
+        screens. Changes only the enumerate and ldap_user_search_base lines.
+        """
+        lines = [line for line in SSSD_CONF.read_text().splitlines(keepends=True) if _key(line) != 'ldap_user_search_base']
+        search_base = next((line.split('=', 1)[1].strip() for line in lines if _key(line) == 'ldap_search_base'), None)
+        if search_base is None:
+            raise RuntimeError('No ldap_search_base line in %s; was this system joined with this tool?' % (SSSD_CONF,))
+        out = []
+        for line in lines:
+            if _key(line) == 'enumerate':
+                line = 'enumerate = %s\n' % ('true' if listed else 'false',)
+            out.append(line)
+            if listed and _key(line) == 'ldap_search_base':
+                out.append('ldap_user_search_base = %s?subtree?%s\n' % (search_base, LISTED_USERS_FILTER))
+        SSSD_CONF.write_text(''.join(out))
+        if not restart:
+            return
+        userinfo_logger.info('%s domain users on the login screen', 'Showing' if listed else 'Not showing')
+        if listed:
+            # Accounts cached before (e.g. krbtgt) would still be listed even
+            # though the filter now excludes them. Clearing the cache also
+            # drops cached passwords: offline logins work again after each
+            # user's next login with the DC reachable.
+            userinfo_logger.info('Clearing the SSSD cache; users need one login with the DC reachable before logging in offline')
+            subprocess.check_output(
+                ['sssctl', 'cache-remove', '--override', '--stop', '--start', '--restore'],
+                stdin=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+            )
+        else:
+            subprocess.check_output(['systemctl', 'restart', 'sssd'], stderr=subprocess.STDOUT)
 
     @execute_as_root
     def update_machine_password(self, machine_password: str) -> None:

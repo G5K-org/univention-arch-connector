@@ -69,6 +69,11 @@ LDAP, login manager behavior at the greeter) needs a real lab setup.
    - [ ] `kinit <user>` and `klist -e` work, with AES (not RC4/DES) enctypes.
    - [ ] `getent passwd <user>` resolves via SSSD.
 
+   - [ ] After `--login-user-list show`, the greeter lists active domain
+     users (no `$` computer accounts, `krbtgt`, `Guest` or hidden service
+     accounts) and preselects the last one who logged in; `hide` returns to
+     local users only. A re-join keeps the setting.
+
 ## Options
 
 7. On a second clean VM, test `--force-ucs-dns`, once with systemd-resolved

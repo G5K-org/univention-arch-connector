@@ -131,3 +131,46 @@ def test_pam_mount_goes_after_mkhomedir(monkeypatch, tmp_path):
 
     pc.PamConfigurator.disable_pam_mount.__wrapped__(pc.PamConfigurator())
     assert 'pam_mount' not in system_login.read_text()
+
+
+SSSD_CONF_TEXT = """\
+[domain/example.com]
+ldap_uri = ldap://dc.example.com:7389/
+ldap_search_base = dc=example,dc=com
+krb5_realm = EXAMPLE.COM
+cache_credentials = true
+enumerate = false
+"""
+
+
+def test_domain_users_listing_toggles_and_survives_rejoin_template(monkeypatch, tmp_path):
+    sssd_conf = tmp_path / 'sssd.conf'
+    sssd_conf.write_text(SSSD_CONF_TEXT)
+    monkeypatch.setattr(sc, 'SSSD_CONF', sssd_conf)
+    configurator = sc.SssdConfigurator()
+    set_listed = sc.SssdConfigurator.set_domain_users_listed.__wrapped__
+    listed = sc.SssdConfigurator.domain_users_listed.__wrapped__
+
+    assert not listed(configurator)
+    set_listed(configurator, True, restart=False)
+    set_listed(configurator, True, restart=False)  # idempotent
+    content = sssd_conf.read_text()
+    assert 'enumerate = true\n' in content
+    assert content.count('ldap_user_search_base') == 1
+    assert ('ldap_user_search_base = dc=example,dc=com?subtree?(&(objectClass=inetOrgPerson)'
+            '(!(univentionObjectFlag=hidden))(!(shadowExpire=1)))\n') in content
+    assert listed(configurator)
+
+    set_listed(configurator, False, restart=False)
+    assert sssd_conf.read_text() == SSSD_CONF_TEXT
+
+
+def test_machine_password_is_replaced_in_sssd_conf(monkeypatch, tmp_path):
+    sssd_conf = tmp_path / 'sssd.conf'
+    sssd_conf.write_text('[domain/example.com]\nldap_default_authtok = old\nkrb5_realm = EXAMPLE.COM\n')
+    monkeypatch.setattr(sc, 'SSSD_CONF', sssd_conf)
+    monkeypatch.setattr(sc.subprocess, 'check_output', lambda *a, **k: b'')
+
+    sc.SssdConfigurator.update_machine_password.__wrapped__(sc.SssdConfigurator(), 'n3w;#\\')
+
+    assert sssd_conf.read_text() == '[domain/example.com]\nldap_default_authtok = n3w;#\\\nkrb5_realm = EXAMPLE.COM\n'

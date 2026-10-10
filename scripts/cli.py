@@ -19,6 +19,7 @@ from typing import List, Optional
 
 from univention_arch_connector.join import check_system, connect_to_dc, resolve_dc_ip, run_join
 from univention_arch_connector import shares
+from univention_arch_connector.join_steps.sssd_configurator import SssdConfigurator, is_joined
 from univention_arch_connector.leave.leave_domain import leave_domain
 from univention_arch_connector.utils.general import execute_as_root
 from univention_arch_connector.utils.host_key import pin_host_keys
@@ -56,6 +57,11 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
              'Without names, choose interactively.' % (shares.MOUNT_DIR,),
     )
     parser.add_argument('--remove-shares', action='store_true', help='Stop mounting shares at login')
+    parser.add_argument(
+        '--login-user-list', choices=['show', 'hide'],
+        help='Show active domain users in the login screen\'s user list, or hide them again (after joining). '
+             'Meant for small domains: SSSD then lists all of them.',
+    )
     parser.add_argument('--backup-dir', help='Backup directory to use with --leave-domain (defaults to the most recent one)')
     parser.add_argument('-L', '--logfile', default=DEFAULT_LOGFILE, help='Path to the log file (default: %s)' % (DEFAULT_LOGFILE,))
     return parser.parse_args(argv)
@@ -174,6 +180,11 @@ def main(argv: Optional[list] = None) -> None:
         if args.list_shares or args.setup_shares is not None or args.remove_shares:
             run_shares_command(args)
             return
+        if args.login_user_list:
+            if not is_joined():
+                raise RuntimeError('This system is not joined to a UCS domain.')
+            SssdConfigurator().set_domain_users_listed(args.login_user_list == 'show')
+            return
 
         check_system()
         dc_ip = resolve_dc_ip(args.domain, args.dc_ip)
@@ -193,6 +204,8 @@ def main(argv: Optional[list] = None) -> None:
             action = 'Leaving the domain'
         elif args.list_shares or args.setup_shares is not None or args.remove_shares:
             action = 'Share setup'
+        elif args.login_user_list:
+            action = 'Login screen setup'
         else:
             action = 'Domain join'
         userinfo_logger.critical('%s failed: %s. See %s for details.', action, str(exc).rstrip('.'), args.logfile)

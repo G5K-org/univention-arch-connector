@@ -90,6 +90,21 @@ To undo a join (the computer object in UCS is left for you to remove in UMC):
 sudo univention-arch-connector-cli --leave-domain
 ```
 
+### Domain users on the login screen
+
+Login screens list users from the system's user database, which by default
+only holds local users; domain users type their name. To list them too:
+
+```
+sudo univention-arch-connector-cli --login-user-list show   # or: hide
+```
+
+(In the graphical assistant: "Show domain users on the login screen".) Only
+active person accounts are listed - no computer, hidden service or disabled
+accounts. SSSD then enumerates all domain users, which is meant for small
+domains. Enabling it clears SSSD's cache, so each user needs one login with
+the DC reachable before logging in offline again.
+
 ### Network shares
 
 After joining, list the file shares defined in UCS and choose which ones are

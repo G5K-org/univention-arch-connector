@@ -23,7 +23,7 @@ from PyQt5.QtWidgets import (
 
 from univention_arch_connector import shares
 from univention_arch_connector.join import check_system, connect_to_dc, resolve_dc_ip, run_join
-from univention_arch_connector.join_steps.sssd_configurator import SSSD_CONF
+from univention_arch_connector.join_steps.sssd_configurator import SssdConfigurator, is_joined
 from univention_arch_connector.utils.host_key import pin_host_keys
 
 userinfo_logger = logging.getLogger('userinfo')
@@ -145,6 +145,11 @@ class DomainJoinDialog(QDialog):
         self.dc_fingerprint_edit.setPlaceholderText('SHA256:... - asked to confirm if left empty')
         self.skip_login_manager_checkbox = QCheckBox("Don't configure the login manager")
         self.force_ucs_dns_checkbox = QCheckBox("Point this system's DNS at the domain controller")
+        self.list_users_checkbox = QCheckBox('Show domain users on the login screen')
+        self.list_users_checkbox.setToolTip('Takes effect immediately on a joined system. Meant for small domains.')
+        self.list_users_checkbox.setEnabled(is_joined())
+        self.list_users_checkbox.setChecked(SssdConfigurator().domain_users_listed())
+        self.list_users_checkbox.toggled.connect(self.set_domain_users_listed)
 
         form = QFormLayout()
         form.addRow('Administrator username:', self.username_edit)
@@ -154,6 +159,7 @@ class DomainJoinDialog(QDialog):
         form.addRow('DC SSH host key fingerprint (optional):', self.dc_fingerprint_edit)
         form.addRow(self.skip_login_manager_checkbox)
         form.addRow(self.force_ucs_dns_checkbox)
+        form.addRow(self.list_users_checkbox)
 
         self.log_view = QPlainTextEdit()
         self.log_view.setReadOnly(True)
@@ -163,7 +169,7 @@ class DomainJoinDialog(QDialog):
         self.join_button.clicked.connect(self.start_join)
         self.shares_button = QPushButton('Network shares…')
         self.shares_button.clicked.connect(self.edit_shares)
-        self.shares_button.setEnabled(SSSD_CONF.exists())
+        self.shares_button.setEnabled(is_joined())
         self.close_button = QPushButton('Close')
         self.close_button.clicked.connect(self.reject)
 
@@ -228,6 +234,13 @@ class DomainJoinDialog(QDialog):
         )
         self.worker.host_key_accepted = answer == QMessageBox.Yes
 
+    def set_domain_users_listed(self, listed: bool) -> None:
+        try:
+            SssdConfigurator().set_domain_users_listed(listed)
+        except Exception as exc:
+            debug_logger.exception('Changing the login screen user list failed')
+            QMessageBox.critical(self, 'Login screen', str(exc))
+
     def edit_shares(self) -> None:
         try:
             available = shares.list_shares()
@@ -255,6 +268,7 @@ class DomainJoinDialog(QDialog):
             self.thread.wait()
         if success:
             self.shares_button.setEnabled(True)
+            self.list_users_checkbox.setEnabled(True)
             QMessageBox.information(self, 'Success', 'Domain join successful. Please reboot this machine.')
         else:
             QMessageBox.critical(self, 'Domain join failed', '%s\n\nDetails: %s' % (error_message, LOGFILE))
