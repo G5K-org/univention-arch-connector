@@ -70,3 +70,15 @@ def leave_domain(backup_dir: Optional[Path] = None) -> None:
         'Left the domain. The computer object in UCS was NOT removed automatically - '
         'remove it manually via UMC if desired. A reboot is recommended.'
     )
+
+
+def rollback(backup_dir: Path) -> None:
+    """Undo a join that failed part-way, restoring every file verbatim from
+    the backup taken moments before. Unlike leave_domain() this also
+    restores the marker-based files as a whole, so a re-join over an
+    existing, working join gets the previous configuration back.
+    """
+    userinfo_logger.info('Rolling back the configuration changes using the backup at %s', backup_dir)
+    for entry in load_manifest(backup_dir):
+        restore_file(entry, backup_dir)
+    _reload_services()

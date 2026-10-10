@@ -12,18 +12,16 @@
 import logging
 import queue
 import sys
-from typing import Optional
+from typing import List, Optional
 
-from PyQt5.QtCore import QObject, QThread, pyqtSignal
+from PyQt5.QtCore import QObject, Qt, QThread, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication, QCheckBox, QDialog, QFormLayout, QHBoxLayout, QLabel,
     QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout,
 )
 
-from univention_arch_connector.distributions.arch import (
-    ArchJoiner, check_if_ssh_works_with_given_account, get_ucr_variables_from_dc, is_arch_based,
-)
-from univention_arch_connector.utils.domain import get_master_ip_through_dns, get_ucs_domainname
+from univention_arch_connector.join import check_system, connect_to_dc, resolve_dc_ip, run_join
+from univention_arch_connector.utils.host_key import pin_host_keys
 
 userinfo_logger = logging.getLogger('userinfo')
 debug_logger = logging.getLogger('debugging')
@@ -40,44 +38,33 @@ class QueueLogHandler(logging.Handler):
 
 class JoinWorker(QObject):
     finished = pyqtSignal(bool, str)
+    # Connected with a BlockingQueuedConnection: the dialog asks the user
+    # in the GUI thread and stores the answer in host_key_accepted.
+    host_key_confirmation_requested = pyqtSignal(str, list)
 
-    def __init__(self, username: str, password: str, domain: str, dc_ip: str,
+    def __init__(self, username: str, password: str, domain: str, dc_ip: str, dc_fingerprint: str,
                  skip_login_manager: bool, force_ucs_dns: bool) -> None:
         super().__init__()
         self.username = username
         self.password = password
         self.domain = domain
         self.dc_ip = dc_ip
+        self.dc_fingerprint = dc_fingerprint
         self.skip_login_manager = skip_login_manager
         self.force_ucs_dns = force_ucs_dns
+        self.host_key_accepted = False
+
+    def confirm_host_key(self, dc_ip: str, fingerprints: List[str]) -> bool:
+        self.host_key_confirmation_requested.emit(dc_ip, fingerprints)
+        return self.host_key_accepted
 
     def run(self) -> None:
         try:
-            if not is_arch_based():
-                raise RuntimeError('This system does not appear to be Arch Linux or an Arch-based distribution.')
-
-            dc_ip = self.dc_ip
-            if not dc_ip:
-                domain = self.domain or get_ucs_domainname()
-                if not domain:
-                    raise RuntimeError('Could not determine the UCS domain automatically. Please specify it.')
-                dc_ip = get_master_ip_through_dns(domain)
-                if not dc_ip:
-                    raise RuntimeError("Could not resolve the domain controller's address for '%s'." % (domain,))
-
-            if not check_if_ssh_works_with_given_account(dc_ip, self.username, self.password):
-                raise RuntimeError('Could not log in to %s via SSH as %s. Check the credentials.' % (dc_ip, self.username))
-
-            userinfo_logger.info('Fetching domain configuration from the domain controller')
-            ucr_variables = get_ucr_variables_from_dc(dc_ip, self.username, self.password)
-
-            joiner = ArchJoiner(
-                ucr_variables, self.username, self.password, dc_ip,
-                self.skip_login_manager, self.force_ucs_dns,
-            )
-            joiner.check_if_join_is_possible_without_problems()
-            joiner.create_backup_of_config_files()
-            joiner.join_domain()
+            check_system()
+            dc_ip = resolve_dc_ip(self.domain, self.dc_ip)
+            pin_host_keys(dc_ip, self.dc_fingerprint or None, self.confirm_host_key)
+            joiner = connect_to_dc(dc_ip, self.username, self.password, self.skip_login_manager, self.force_ucs_dns)
+            run_join(joiner)
         except Exception as exc:
             debug_logger.exception('Domain join failed')
             self.finished.emit(False, str(exc))
@@ -98,6 +85,8 @@ class DomainJoinDialog(QDialog):
         self.domain_edit.setPlaceholderText('auto-detected if left empty')
         self.dc_ip_edit = QLineEdit()
         self.dc_ip_edit.setPlaceholderText('auto-detected via DNS if left empty')
+        self.dc_fingerprint_edit = QLineEdit()
+        self.dc_fingerprint_edit.setPlaceholderText('SHA256:... - asked to confirm if left empty')
         self.skip_login_manager_checkbox = QCheckBox("Don't configure the login manager")
         self.force_ucs_dns_checkbox = QCheckBox("Point this system's DNS at the domain controller")
 
@@ -106,6 +95,7 @@ class DomainJoinDialog(QDialog):
         form.addRow('Administrator password:', self.password_edit)
         form.addRow('Domain (optional):', self.domain_edit)
         form.addRow('Domain controller IP (optional):', self.dc_ip_edit)
+        form.addRow('DC SSH host key fingerprint (optional):', self.dc_fingerprint_edit)
         form.addRow(self.skip_login_manager_checkbox)
         form.addRow(self.force_ucs_dns_checkbox)
 
@@ -158,13 +148,25 @@ class DomainJoinDialog(QDialog):
             username, password,
             self.domain_edit.text().strip(),
             self.dc_ip_edit.text().strip(),
+            self.dc_fingerprint_edit.text().strip(),
             self.skip_login_manager_checkbox.isChecked(),
             self.force_ucs_dns_checkbox.isChecked(),
         )
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.finished.connect(self.on_join_finished)
+        self.worker.host_key_confirmation_requested.connect(self.confirm_host_key, Qt.BlockingQueuedConnection)
         self.thread.start()
+
+    def confirm_host_key(self, dc_ip: str, fingerprints: List[str]) -> None:
+        assert self.worker is not None
+        answer = QMessageBox.question(
+            self, 'Verify the domain controller',
+            'The SSH host key of the domain controller %s is:\n\n%s\n\n'
+            'Compare it with the output of `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` '
+            'on the domain controller. Is this the right domain controller?' % (dc_ip, '\n'.join(fingerprints)),
+        )
+        self.worker.host_key_accepted = answer == QMessageBox.Yes
 
     def on_join_finished(self, success: bool, error_message: str) -> None:
         self.join_button.setEnabled(True)
@@ -178,7 +180,9 @@ class DomainJoinDialog(QDialog):
 
 
 def main() -> None:
-    app = QApplication(sys.argv)  # noqa: F841 - must stay referenced for the app's lifetime
+    app = QApplication(sys.argv)
+    # Lets Wayland compositors match the window to its .desktop entry/icon.
+    app.setDesktopFileName('univention-arch-connector')
     dialog = DomainJoinDialog()
     dialog.exec_()
     sys.exit(0)

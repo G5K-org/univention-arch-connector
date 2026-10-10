@@ -5,8 +5,9 @@
 # Lightly adapted from univention-domain-join (upstream module:
 # scripts/cli.py). Same argparse surface and overall flow (parse args,
 # require root, drop privileges, set up logging, resolve the DC, build a
-# Joiner, run the three AbstractJoiner steps). Adds --leave-domain and
-# --backup-dir, which upstream doesn't have. See ../NOTICE.md.
+# Joiner, run the three AbstractJoiner steps), now via the shared
+# univention_arch_connector.join module. Adds --leave-domain, --backup-dir
+# and --dc-fingerprint, which upstream doesn't have. See ../NOTICE.md.
 
 import argparse
 import getpass
@@ -14,17 +15,11 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
-from univention_arch_connector.distributions import DomainJoinException
-from univention_arch_connector.distributions.arch import (
-    ArchJoiner,
-    check_if_ssh_works_with_given_account,
-    get_ucr_variables_from_dc,
-    is_arch_based,
-)
+from univention_arch_connector.join import check_system, connect_to_dc, resolve_dc_ip, run_join
 from univention_arch_connector.leave.leave_domain import leave_domain
-from univention_arch_connector.utils.domain import get_master_ip_through_dns, get_ucs_domainname
+from univention_arch_connector.utils.host_key import pin_host_keys
 
 userinfo_logger = logging.getLogger('userinfo')
 debug_logger = logging.getLogger('debugging')
@@ -44,6 +39,11 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
     parser.add_argument('--password-file', help='File containing the domain administrator password')
     parser.add_argument('--domain', help='UCS domain name (auto-detected via DNS/reverse-DNS if omitted)')
     parser.add_argument('--dc-ip', help='IP address of the UCS domain controller, if --domain auto-detection does not work')
+    parser.add_argument(
+        '--dc-fingerprint',
+        help="SHA256 fingerprint of the domain controller's SSH host key (from `ssh-keygen -lf "
+             "/etc/ssh/ssh_host_ed25519_key.pub` on the DC). Required when not running interactively.",
+    )
     parser.add_argument('--force-ucs-dns', action='store_true', help="Point this system's DNS configuration at the UCS domain controller")
     parser.add_argument('--skip-login-manager', action='store_true', help="Don't check/configure the login manager for domain logins")
     parser.add_argument('--leave-domain', action='store_true', help='Undo a previous domain join using a backup (see --backup-dir)')
@@ -98,44 +98,16 @@ def resolve_password(args: argparse.Namespace) -> Optional[str]:
     return None
 
 
-def resolve_dc_ip(args: argparse.Namespace) -> str:
-    if args.dc_ip:
-        return args.dc_ip
-    domain = args.domain or get_ucs_domainname()
-    if not domain:
-        userinfo_logger.critical('Could not determine the UCS domain name automatically. Pass --domain or --dc-ip.')
-        sys.exit(1)
-    dc_ip = get_master_ip_through_dns(domain)
-    if not dc_ip:
-        userinfo_logger.critical(
-            "Could not resolve the domain controller's address for domain '%s' via DNS. Pass --dc-ip explicitly.",
-            domain,
+def confirm_host_key(dc_ip: str, fingerprints: List[str]) -> bool:
+    if not sys.stdin.isatty():
+        userinfo_logger.error(
+            'Cannot ask to confirm the SSH host key of %s (%s) without a terminal.', dc_ip, ', '.join(fingerprints),
         )
-        sys.exit(1)
-    return dc_ip
-
-
-def build_joiner(args: argparse.Namespace, dc_ip: str) -> ArchJoiner:
-    if not is_arch_based():
-        userinfo_logger.critical('This system does not appear to be Arch Linux or an Arch-based distribution.')
-        sys.exit(1)
-
-    username = args.username or input('Domain administrator username: ')
-    password = resolve_password(args)
-    if password is None:
-        password = getpass.getpass('Domain administrator password: ')
-
-    if not check_if_ssh_works_with_given_account(dc_ip, username, password):
-        userinfo_logger.critical(
-            'Could not log in to %s via SSH as %s. Check the credentials and that SSH is reachable.',
-            dc_ip, username,
-        )
-        sys.exit(1)
-
-    userinfo_logger.info('Fetching domain configuration from the domain controller')
-    ucr_variables = get_ucr_variables_from_dc(dc_ip, username, password)
-
-    return ArchJoiner(ucr_variables, username, password, dc_ip, args.skip_login_manager, args.force_ucs_dns)
+        return False
+    print('The SSH host key of the domain controller %s is:' % (dc_ip,))
+    for fingerprint in fingerprints:
+        print('  %s' % (fingerprint,))
+    return input('Is this the right domain controller (yes/no)? ').strip().lower() in ('y', 'yes')
 
 
 def main(argv: Optional[list] = None) -> None:
@@ -150,16 +122,22 @@ def main(argv: Optional[list] = None) -> None:
             leave_domain(backup_dir)
             return
 
-        dc_ip = resolve_dc_ip(args)
-        joiner = build_joiner(args, dc_ip)
-        joiner.check_if_join_is_possible_without_problems()
-        joiner.create_backup_of_config_files()
-        joiner.join_domain()
+        check_system()
+        dc_ip = resolve_dc_ip(args.domain, args.dc_ip)
+        pin_host_keys(dc_ip, args.dc_fingerprint, confirm_host_key)
+
+        username = args.username or input('Domain administrator username: ')
+        password = resolve_password(args)
+        if password is None:
+            password = getpass.getpass('Domain administrator password: ')
+
+        joiner = connect_to_dc(dc_ip, username, password, args.skip_login_manager, args.force_ucs_dns)
+        run_join(joiner)
     except SystemExit:
         raise
-    except (DomainJoinException, Exception) as exc:
+    except Exception as exc:
         action = 'Leaving the domain' if args.leave_domain else 'Domain join'
-        userinfo_logger.critical('%s failed: %s. See %s for details.', action, exc, args.logfile)
+        userinfo_logger.critical('%s failed: %s. See %s for details.', action, str(exc).rstrip('.'), args.logfile)
         debug_logger.exception('%s failed', action)
         sys.exit(1)
 

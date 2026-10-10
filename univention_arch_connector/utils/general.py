@@ -7,16 +7,27 @@
 # local process/environment in a distro-agnostic way, so no logic changes
 # were needed for the Arch Linux port; only `pipes.quote` (removed in
 # Python 3.13) was swapped for its stdlib replacement `shlex.quote`.
-# See ../../NOTICE.md.
+#
+# Unlike upstream, ssh() no longer disables host key checking: it only
+# connects once the DC's host keys have been pinned via
+# set_ssh_known_hosts_file() (see utils/host_key.py). See ../../NOTICE.md.
 
 import os
 import socket
 import subprocess
 from functools import wraps
 from shlex import quote
-from typing import Any, Callable, List, TypeVar, Union, cast
+from typing import Any, Callable, List, Optional, TypeVar, Union, cast
 
 F = TypeVar('F', bound=Callable[..., Any])
+
+# known_hosts file holding the pinned host keys of the domain controller.
+_ssh_known_hosts_file: Optional[str] = None
+
+
+def set_ssh_known_hosts_file(path: str) -> None:
+    global _ssh_known_hosts_file
+    _ssh_known_hosts_file = path
 
 
 def execute_as_root(func: F) -> F:
@@ -50,14 +61,18 @@ def ssh(username: str, password: str, hostname: str, command: Union[str, List[st
     """Run ``command`` on ``hostname`` over SSH as ``username``, authenticating
     with ``password`` via ``sshpass``. Used exclusively to talk to the UCS
     domain controller - never anything local to the Arch client.
+    Refuses to run before the DC's host keys have been pinned, so the
+    admin password is only ever sent to the verified host.
     """
+    if _ssh_known_hosts_file is None:
+        raise RuntimeError('SSH host key of the domain controller has not been verified yet')
     cmd = [
         "sshpass",
         "-e",  # Password is passed as env-var "SSHPASS"
         "ssh",
         "-F", "none",
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=/dev/null",
+        "-o", "StrictHostKeyChecking=yes",
+        "-o", "UserKnownHostsFile=%s" % (_ssh_known_hosts_file,),
         "-l", username,
         hostname,
         command if isinstance(command, str) else " ".join(quote(arg) for arg in command),
