@@ -20,20 +20,31 @@ LDAP, login manager behavior at the greeter) needs a real lab setup.
    ```
    univention-arch-connector-cli --dc-ip <ip> --username Administrator --password-file /path/to/pwfile
    ```
+   - [ ] The DC's SSH host key fingerprints are shown and must be confirmed;
+     answering "no" aborts before any credentials are sent.
+   - [ ] Without a terminal, the join refuses to continue unless
+     `--dc-fingerprint` is given; a wrong fingerprint is rejected.
+   - [ ] Without `--dc-ip`, the domain is auto-detected, also when the
+     client's DNS domain is a subdomain of the UCS domain.
 5. Verify:
    - [ ] The computer object appears in UCS UMC under `cn=computers`.
    - [ ] `/etc/sssd/sssd.conf`, `/etc/krb5.conf`, `/etc/ldap/ldap.conf`,
      `/etc/machine.secret` (mode 600) were written.
    - [ ] `/etc/pam.d/system-login` and `/etc/security/group.conf` each
-     contain exactly one `univention-arch-connector` marker block.
+     contain exactly one `univention-arch-connector` marker block, and
+     `/etc/pam.d/system-auth` contains one `pam_sss` block each for auth,
+     account, password and session.
    - [ ] Re-running the join produces **no duplicate** marker blocks
      (idempotency).
    - [ ] `/etc/nsswitch.conf` has `sss` appended on the `passwd`, `group`,
      and `shadow` lines, with existing tokens (e.g. `[SUCCESS=merge]
      systemd`) intact.
    - [ ] The UCS root CA is present under
-     `/etc/ca-certificates/trust-source/anchors/UCSdomain.crt` and `trust
-     list` shows it.
+     `/etc/ca-certificates/trust-source/anchors/UCSdomain.crt`, identical to
+     `/etc/univention/ssl/ucsCA/CAcert.pem` on the DC, and `trust list`
+     shows it.
+   - [ ] A join that fails part-way (e.g. stop the DC's Kerberos service
+     mid-join) restores every changed file and stops SSSD.
 
 ## Login
 
@@ -55,7 +66,7 @@ LDAP, login manager behavior at the greeter) needs a real lab setup.
 8. Test `--skip-login-manager`:
    - [ ] No login-manager conflict check or config file is touched.
 9. Test `--leave-domain`:
-   - [ ] Marker blocks removed from `system-login`/`group.conf`/`nsswitch.conf`.
+   - [ ] Marker blocks removed from `system-auth`/`system-login`/`group.conf`/`nsswitch.conf`.
    - [ ] `sssd.conf`, `krb5.conf`, `ldap.conf` restored to their pre-join
      state (or removed, if they didn't exist before).
    - [ ] The UCS CA trust anchor is removed.

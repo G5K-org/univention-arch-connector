@@ -1,0 +1,20 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: >-
+          pacman -Syu --noconfirm --needed
+          python python-pytest python-pyflakes python-ldap python-dnspython python-netifaces
+      - uses: actions/checkout@v4
+      - name: Lint
+        run: python -m pyflakes univention_arch_connector scripts tests
+      - name: Unit tests
+        run: python -m pytest
