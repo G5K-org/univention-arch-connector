@@ -89,6 +89,22 @@ def test_restore_file_deletes_created_new_file(tmp_path):
     assert not created.exists()
 
 
+def test_restore_file_deletes_created_new_dangling_symlink(tmp_path):
+    target = tmp_path / 'CAcert.pem'
+    link = tmp_path / 'UCSdomain.crt'
+    link.symlink_to(target)  # target already removed, e.g. by an earlier entry
+    entry = {
+        'original_path': str(link),
+        'backup_relpath': None,
+        'action': 'created-new',
+        'sha256_before': None,
+    }
+
+    backup_mod._restore_file_impl(entry, tmp_path)
+
+    assert not link.is_symlink()
+
+
 def test_find_latest_backup_dir_picks_most_recent(tmp_path, monkeypatch):
     monkeypatch.setattr(backup_mod, 'BACKUP_ROOT', tmp_path)
     (tmp_path / '20250101T000000Z').mkdir()

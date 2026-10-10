@@ -104,7 +104,8 @@ def load_manifest(backup_dir: Path) -> List[ManifestEntry]:
 def _restore_file_impl(entry: ManifestEntry, backup_dir: Path) -> None:
     original_path = Path(entry['original_path'])
     if entry['action'] == 'created-new':
-        if original_path.exists():
+        # is_symlink(): also remove links whose target was already removed.
+        if original_path.exists() or original_path.is_symlink():
             original_path.unlink()
             userinfo_logger.info('Removed %s (was created by join)', original_path)
     else:

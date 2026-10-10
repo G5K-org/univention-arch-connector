@@ -14,7 +14,6 @@ pkgbase = univention-arch-connector-cli
 	depends = openldap
 	depends = openssh
 	depends = systemd
-	depends = wget
 	optdepends = ntp: fallback one-shot time sync if chrony is not installed
 	optdepends = networkmanager: DNS backend used when systemd-resolved is not active
 	source = univention-arch-connector-cli-0.1.0.tar.gz::https://github.com/G5K-org/univention-arch-connector/archive/refs/tags/v0.1.0.tar.gz

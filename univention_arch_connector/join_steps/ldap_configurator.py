@@ -63,6 +63,7 @@ class LdapConfigurator(ConflictChecker):
     def backup(self, backup: Backup) -> None:
         backup.backup_file(str(LDAP_CONF))
         backup.backup_file(str(MACHINE_SECRET))
+        self.root_certificate_provider.backup(backup)
 
     def configure_ldap(
         self,
@@ -73,7 +74,7 @@ class LdapConfigurator(ConflictChecker):
         ldap_master: str,
         ldap_base: str,
     ) -> Tuple[str, str]:
-        self.root_certificate_provider.provide_ucs_root_certificate(dc_ip)
+        self.root_certificate_provider.provide_ucs_root_certificate(dc_ip, admin_username, admin_pw)
         machine_password = self.random_password()
         machine_dn = self.modify_old_entry_or_add_machine_to_ldap(dc_ip, admin_username, admin_pw, admin_dn, ldap_base, machine_password)
         self.create_ldap_conf_file(ldap_master, ldap_base)
