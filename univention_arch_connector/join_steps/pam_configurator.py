@@ -42,6 +42,7 @@ MKHOMEDIR_MARKER = 'univention-arch-connector (pam_mkhomedir)'
 PAM_GROUP_MARKER = 'univention-arch-connector (pam_group)'
 SSS_MARKER = 'univention-arch-connector (pam_sss %s)'
 PAM_MOUNT_MARKER = 'univention-arch-connector (pam_mount)'
+REMEMBER_MARKER = 'univention-arch-connector (remember domain users)'
 
 # `optional`, not `required`: a failure in either module must never lock a
 # domain user out of login.
@@ -203,6 +204,30 @@ class PamConfigurator:
         _remove_marked_block(SYSTEM_LOGIN, PAM_MOUNT_MARKER)
 
     @execute_as_root
+    def enable_remember_hook(self, hook: str) -> None:
+        """Run ``hook`` (login_users.py) at session start, after pam_sss
+        and pam_mkhomedir.
+        """
+        _insert_marked_block(
+            SYSTEM_LOGIN,
+            REMEMBER_MARKER,
+            anchor_pattern=r'^# END %s$' % (re.escape(MKHOMEDIR_MARKER),),
+            block_lines=['session    optional    pam_exec.so quiet %s\n' % (hook,)],
+        )
+
+    @execute_as_root
+    def disable_remember_hook(self) -> None:
+        _remove_marked_block(SYSTEM_LOGIN, REMEMBER_MARKER)
+
+    @execute_as_root
+    def remember_hook_enabled(self) -> bool:
+        begin = '# BEGIN %s' % (REMEMBER_MARKER,)
+        try:
+            return any(line == begin for line in SYSTEM_LOGIN.read_text().splitlines())
+        except OSError:
+            return False
+
+    @execute_as_root
     def remove(self) -> None:
         """Surgically strip our marker blocks, leaving everything else the
         user may have changed in these files untouched. Used by
@@ -212,6 +237,7 @@ class PamConfigurator:
         for pam_type, _, _, _ in SSS_BLOCKS:
             _remove_marked_block(SYSTEM_AUTH, SSS_MARKER % (pam_type,))
         _remove_marked_block(SYSTEM_LOGIN, PAM_MOUNT_MARKER)
+        _remove_marked_block(SYSTEM_LOGIN, REMEMBER_MARKER)
         _remove_marked_block(SYSTEM_LOGIN, MKHOMEDIR_MARKER)
         _remove_marked_block(SYSTEM_LOGIN, PAM_GROUP_MARKER)
         self._remove_group_conf_line()

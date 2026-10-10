@@ -19,7 +19,8 @@ from typing import List, Optional
 
 from univention_arch_connector.join import check_system, connect_to_dc, resolve_dc_ip, run_join
 from univention_arch_connector import shares
-from univention_arch_connector.join_steps.sssd_configurator import SssdConfigurator, is_joined
+from univention_arch_connector import login_users
+from univention_arch_connector.join_steps.sssd_configurator import is_joined
 from univention_arch_connector.leave.leave_domain import leave_domain
 from univention_arch_connector.utils.general import execute_as_root
 from univention_arch_connector.utils.host_key import pin_host_keys
@@ -58,9 +59,9 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
     )
     parser.add_argument('--remove-shares', action='store_true', help='Stop mounting shares at login')
     parser.add_argument(
-        '--login-user-list', choices=['show', 'hide'],
-        help='Show active domain users in the login screen\'s user list, or hide them again (after joining). '
-             'Meant for small domains: SSSD then lists all of them.',
+        '--login-user-list', choices=login_users.MODES,
+        help="Which domain users the login screen lists (after joining): 'known' - those who logged in on "
+             "this computer before, 'all' - all active ones (for small domains), 'hide' - none.",
     )
     parser.add_argument('--backup-dir', help='Backup directory to use with --leave-domain (defaults to the most recent one)')
     parser.add_argument('-L', '--logfile', default=DEFAULT_LOGFILE, help='Path to the log file (default: %s)' % (DEFAULT_LOGFILE,))
@@ -183,7 +184,7 @@ def main(argv: Optional[list] = None) -> None:
         if args.login_user_list:
             if not is_joined():
                 raise RuntimeError('This system is not joined to a UCS domain.')
-            SssdConfigurator().set_domain_users_listed(args.login_user_list == 'show')
+            login_users.set_mode(args.login_user_list)
             return
 
         check_system()

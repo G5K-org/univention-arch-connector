@@ -96,14 +96,19 @@ Login screens list users from the system's user database, which by default
 only holds local users; domain users type their name. To list them too:
 
 ```
-sudo univention-arch-connector-cli --login-user-list show   # or: hide
+sudo univention-arch-connector-cli --login-user-list known  # who logged in here before
+sudo univention-arch-connector-cli --login-user-list all    # all active domain users
+sudo univention-arch-connector-cli --login-user-list hide   # local users only (default)
 ```
 
-(In the graphical assistant: "Show domain users on the login screen".) Only
-active person accounts are listed - no computer, hidden service or disabled
-accounts. SSSD then enumerates all domain users, which is meant for small
-domains. Enabling it clears SSSD's cache, so each user needs one login with
-the DC reachable before logging in offline again.
+In the graphical assistant: "Login screen lists". `known` remembers each
+domain user at their first login on this computer (as a systemd user record
+in `/etc/userdb/`; passwords and groups still come from the domain), and
+starts with the users who already have a home directory. `all` makes SSSD
+list every active person account - no computer, hidden service or disabled
+accounts - and is meant for small domains; switching to it clears SSSD's
+cache, so each user needs one login with the DC reachable before logging in
+offline again. `--leave-domain` removes either.
 
 ### Network shares
 

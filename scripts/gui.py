@@ -17,13 +17,14 @@ from typing import List, Optional
 
 from PyQt5.QtCore import QObject, Qt, QThread, pyqtSignal
 from PyQt5.QtWidgets import (
-    QApplication, QCheckBox, QDialog, QFormLayout, QHBoxLayout, QLabel,
+    QApplication, QCheckBox, QComboBox, QDialog, QFormLayout, QHBoxLayout, QLabel,
     QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout,
 )
 
 from univention_arch_connector import shares
 from univention_arch_connector.join import check_system, connect_to_dc, resolve_dc_ip, run_join
-from univention_arch_connector.join_steps.sssd_configurator import SssdConfigurator, is_joined
+from univention_arch_connector import login_users
+from univention_arch_connector.join_steps.sssd_configurator import is_joined
 from univention_arch_connector.utils.host_key import pin_host_keys
 
 userinfo_logger = logging.getLogger('userinfo')
@@ -94,6 +95,13 @@ class JoinWorker(QObject):
             self.finished.emit(True, '')
 
 
+LOGIN_LIST_LABELS = {
+    'hide': 'Local users only',
+    'known': 'Domain users who logged in here before',
+    'all': 'All domain users (small domains)',
+}
+
+
 class SharesDialog(QDialog):
     """Choose which UCS shares are mounted at login."""
 
@@ -145,11 +153,15 @@ class DomainJoinDialog(QDialog):
         self.dc_fingerprint_edit.setPlaceholderText('SHA256:... - asked to confirm if left empty')
         self.skip_login_manager_checkbox = QCheckBox("Don't configure the login manager")
         self.force_ucs_dns_checkbox = QCheckBox("Point this system's DNS at the domain controller")
-        self.list_users_checkbox = QCheckBox('Show domain users on the login screen')
-        self.list_users_checkbox.setToolTip('Takes effect immediately on a joined system. Meant for small domains.')
-        self.list_users_checkbox.setEnabled(is_joined())
-        self.list_users_checkbox.setChecked(SssdConfigurator().domain_users_listed())
-        self.list_users_checkbox.toggled.connect(self.set_domain_users_listed)
+        self.login_list_combo = QComboBox()
+        for mode, label in LOGIN_LIST_LABELS.items():
+            self.login_list_combo.addItem(label, mode)
+        self.login_list_combo.setToolTip('Takes effect immediately on a joined system.')
+        joined = is_joined()
+        self.login_list_combo.setEnabled(joined)
+        if joined:
+            self.login_list_combo.setCurrentIndex(list(LOGIN_LIST_LABELS).index(login_users.current_mode()))
+        self.login_list_combo.currentIndexChanged.connect(self.set_login_list_mode)
 
         form = QFormLayout()
         form.addRow('Administrator username:', self.username_edit)
@@ -159,7 +171,7 @@ class DomainJoinDialog(QDialog):
         form.addRow('DC SSH host key fingerprint (optional):', self.dc_fingerprint_edit)
         form.addRow(self.skip_login_manager_checkbox)
         form.addRow(self.force_ucs_dns_checkbox)
-        form.addRow(self.list_users_checkbox)
+        form.addRow('Login screen lists:', self.login_list_combo)
 
         self.log_view = QPlainTextEdit()
         self.log_view.setReadOnly(True)
@@ -234,9 +246,9 @@ class DomainJoinDialog(QDialog):
         )
         self.worker.host_key_accepted = answer == QMessageBox.Yes
 
-    def set_domain_users_listed(self, listed: bool) -> None:
+    def set_login_list_mode(self, index: int) -> None:
         try:
-            SssdConfigurator().set_domain_users_listed(listed)
+            login_users.set_mode(self.login_list_combo.itemData(index))
         except Exception as exc:
             debug_logger.exception('Changing the login screen user list failed')
             QMessageBox.critical(self, 'Login screen', str(exc))
@@ -268,7 +280,7 @@ class DomainJoinDialog(QDialog):
             self.thread.wait()
         if success:
             self.shares_button.setEnabled(True)
-            self.list_users_checkbox.setEnabled(True)
+            self.login_list_combo.setEnabled(True)
             QMessageBox.information(self, 'Success', 'Domain join successful. Please reboot this machine.')
         else:
             QMessageBox.critical(self, 'Domain join failed', '%s\n\nDetails: %s' % (error_message, LOGFILE))
