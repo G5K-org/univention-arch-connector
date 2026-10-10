@@ -73,6 +73,8 @@ if [[ ${#missing[@]} -gt 0 ]]; then
 fi
 
 export PYTHONPATH="$repo${PYTHONPATH:+:$PYTHONPATH}"
+# Running as root must not leave root-owned __pycache__ in a user's checkout.
+export PYTHONDONTWRITEBYTECODE=1
 if [[ $mode == gui ]]; then
     exec python3 "$repo/scripts/gui.py"
 fi
