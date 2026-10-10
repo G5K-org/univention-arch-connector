@@ -39,14 +39,30 @@ build from a release tag.
 
 ## Usage
 
-Install the dependencies:
+### From a checkout
+
+```
+git clone https://github.com/G5K-org/univention-arch-connector
+cd univention-arch-connector
+./start.sh
+```
+
+`start.sh` gets root via `sudo` (or `run0`), offers to install missing
+packages with pacman, and starts the graphical assistant in a graphical
+session, the command line otherwise. `./start.sh --gui` and
+`./start.sh --cli [OPTIONS]` choose explicitly; OPTIONS are those of
+`univention-arch-connector-cli` below, e.g. `./start.sh --cli --list-shares`.
+
+### Command line
+
+Install the dependencies (`start.sh` does this for you):
 
 ```
 sudo pacman -S python python-ldap python-dnspython python-netifaces \
   sshpass openssh sssd krb5 chrony ca-certificates-utils openldap
 ```
 
-Join (from a checkout, run `PYTHONPATH=. python3 scripts/cli.py` instead of
+Join (from a checkout, `./start.sh --cli` instead of
 `univention-arch-connector-cli`):
 
 ```

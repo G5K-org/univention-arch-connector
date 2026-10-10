@@ -13,8 +13,11 @@ jobs:
         run: >-
           pacman -Syu --noconfirm --needed
           python python-pytest python-pyflakes python-ldap python-dnspython python-netifaces
+          shellcheck
       - uses: actions/checkout@v5
       - name: Lint
-        run: python -m pyflakes univention_arch_connector scripts tests
+        run: |
+          python -m pyflakes univention_arch_connector scripts tests
+          shellcheck start.sh
       - name: Unit tests
         run: python -m pytest
