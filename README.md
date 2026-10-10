@@ -29,6 +29,8 @@ When you join a client to the domain, the tool:
 - backs up every file it touches before changing it, and restores them
   automatically if the join fails part-way
 
+After joining, it can also mount UCS file shares at login (see below).
+
 ## Status
 
 Early development. Tested against UCS 5 (with Samba AD) from an Arch Linux
@@ -71,6 +73,27 @@ To undo a join (the computer object in UCS is left for you to remove in UMC):
 ```
 sudo univention-arch-connector-cli --leave-domain
 ```
+
+### Network shares
+
+After joining, list the file shares defined in UCS and choose which ones are
+mounted at login:
+
+```
+sudo pacman -S cifs-utils pam_mount keyutils
+sudo univention-arch-connector-cli --list-shares
+sudo univention-arch-connector-cli --setup-shares            # choose interactively
+sudo univention-arch-connector-cli --setup-shares data team  # or by name
+sudo univention-arch-connector-cli --remove-shares
+```
+
+Chosen shares are mounted for all domain users under `~/Freigaben/<name>`
+at login and unmounted at logout. Users with a home share in UCS
+(`sambahome`) also get it mounted. Mounting uses the user's own Kerberos
+ticket, so no passwords are stored, and the file server enforces each
+user's permissions. The shares are read from UCS when you run
+`--setup-shares`; run it again after adding shares or home shares in UCS.
+In the graphical assistant, use "Network shares…".
 
 Run `univention-arch-connector-cli --help` for all options. The graphical
 assistant `univention-arch-connector-gui` (started via the "Univention

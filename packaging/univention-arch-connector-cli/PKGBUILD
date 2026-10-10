@@ -13,6 +13,9 @@ depends=(
 optdepends=(
   'ntp: fallback one-shot time sync if chrony is not installed'
   'networkmanager: DNS backend used when systemd-resolved is not active'
+  'cifs-utils: mounting UCS shares at login (--setup-shares)'
+  'pam_mount: mounting UCS shares at login (--setup-shares)'
+  'keyutils: mounting UCS shares at login (--setup-shares)'
 )
 source=("$pkgname-$pkgver.tar.gz::https://github.com/G5K-org/univention-arch-connector/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')

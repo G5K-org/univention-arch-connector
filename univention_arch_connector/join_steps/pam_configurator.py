@@ -41,11 +41,17 @@ GROUP_CONF = Path('/etc/security/group.conf')
 MKHOMEDIR_MARKER = 'univention-arch-connector (pam_mkhomedir)'
 PAM_GROUP_MARKER = 'univention-arch-connector (pam_group)'
 SSS_MARKER = 'univention-arch-connector (pam_sss %s)'
+PAM_MOUNT_MARKER = 'univention-arch-connector (pam_mount)'
 
 # `optional`, not `required`: a failure in either module must never lock a
 # domain user out of login.
 MKHOMEDIR_LINE = 'session    optional    pam_mkhomedir.so umask=0022 skel=/etc/skel\n'
 PAM_GROUP_LINE = 'auth       optional    pam_group.so use_first_pass\n'
+# Mounts shares (shares.py) with the user's Kerberos ticket, so no auth
+# line is needed - and disable_interactive keeps it from prompting for a
+# password at session start instead. After pam_sss (ticket) and
+# pam_mkhomedir (mount points live in the home directory).
+PAM_MOUNT_LINE = 'session    optional    pam_mount.so disable_interactive\n'
 
 # (type, block lines, anchor pattern, insert before the anchor?) for each
 # pam_sss block in system-auth. Local users are unknown to SSSD, so pam_sss
@@ -183,6 +189,20 @@ class PamConfigurator:
         )
 
     @execute_as_root
+    def enable_pam_mount(self) -> None:
+        userinfo_logger.info('Enabling pam_mount in %s', SYSTEM_LOGIN)
+        _insert_marked_block(
+            SYSTEM_LOGIN,
+            PAM_MOUNT_MARKER,
+            anchor_pattern=r'^# END %s$' % (re.escape(MKHOMEDIR_MARKER),),
+            block_lines=[PAM_MOUNT_LINE],
+        )
+
+    @execute_as_root
+    def disable_pam_mount(self) -> None:
+        _remove_marked_block(SYSTEM_LOGIN, PAM_MOUNT_MARKER)
+
+    @execute_as_root
     def remove(self) -> None:
         """Surgically strip our marker blocks, leaving everything else the
         user may have changed in these files untouched. Used by
@@ -191,6 +211,7 @@ class PamConfigurator:
         userinfo_logger.info('Removing univention-arch-connector PAM configuration from %s and %s', SYSTEM_AUTH, SYSTEM_LOGIN)
         for pam_type, _, _, _ in SSS_BLOCKS:
             _remove_marked_block(SYSTEM_AUTH, SSS_MARKER % (pam_type,))
+        _remove_marked_block(SYSTEM_LOGIN, PAM_MOUNT_MARKER)
         _remove_marked_block(SYSTEM_LOGIN, MKHOMEDIR_MARKER)
         _remove_marked_block(SYSTEM_LOGIN, PAM_GROUP_MARKER)
         self._remove_group_conf_line()

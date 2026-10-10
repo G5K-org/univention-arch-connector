@@ -20,7 +20,9 @@ from PyQt5.QtWidgets import (
     QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout,
 )
 
+from univention_arch_connector import shares
 from univention_arch_connector.join import check_system, connect_to_dc, resolve_dc_ip, run_join
+from univention_arch_connector.join_steps.sssd_configurator import SSSD_CONF
 from univention_arch_connector.utils.host_key import pin_host_keys
 
 userinfo_logger = logging.getLogger('userinfo')
@@ -72,6 +74,40 @@ class JoinWorker(QObject):
             self.finished.emit(True, '')
 
 
+class SharesDialog(QDialog):
+    """Choose which UCS shares are mounted at login."""
+
+    def __init__(self, parent: QDialog, available: List[shares.Share], configured: List[str], home_count: int) -> None:
+        super().__init__(parent)
+        self.setWindowTitle('Network shares')
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel('Mount these shares at login under %s/<name>:' % (shares.MOUNT_DIR,)))
+        self.checkboxes = []
+        for share in available:
+            checkbox = QCheckBox('%s  (//%s/%s)' % (share.name, share.host, share.name))
+            checkbox.setChecked(share.name in configured)
+            checkbox.setProperty('share_name', share.name)
+            layout.addWidget(checkbox)
+            self.checkboxes.append(checkbox)
+        if not available:
+            layout.addWidget(QLabel('No shares are defined in UCS.'))
+        layout.addWidget(QLabel(
+            '%d user(s) have a home share in UCS; it is mounted for them automatically.' % (home_count,)
+        ))
+        save_button = QPushButton('Save')
+        save_button.clicked.connect(self.accept)
+        cancel_button = QPushButton('Cancel')
+        cancel_button.clicked.connect(self.reject)
+        button_row = QHBoxLayout()
+        button_row.addWidget(save_button)
+        button_row.addWidget(cancel_button)
+        layout.addLayout(button_row)
+        self.setLayout(layout)
+
+    def selected(self) -> List[str]:
+        return [checkbox.property('share_name') for checkbox in self.checkboxes if checkbox.isChecked()]
+
+
 class DomainJoinDialog(QDialog):
     def __init__(self) -> None:
         super().__init__()
@@ -105,11 +141,15 @@ class DomainJoinDialog(QDialog):
 
         self.join_button = QPushButton('Join domain')
         self.join_button.clicked.connect(self.start_join)
+        self.shares_button = QPushButton('Network shares…')
+        self.shares_button.clicked.connect(self.edit_shares)
+        self.shares_button.setEnabled(SSSD_CONF.exists())
         self.close_button = QPushButton('Close')
         self.close_button.clicked.connect(self.reject)
 
         button_row = QHBoxLayout()
         button_row.addWidget(self.join_button)
+        button_row.addWidget(self.shares_button)
         button_row.addWidget(self.close_button)
 
         layout = QVBoxLayout()
@@ -168,12 +208,33 @@ class DomainJoinDialog(QDialog):
         )
         self.worker.host_key_accepted = answer == QMessageBox.Yes
 
+    def edit_shares(self) -> None:
+        try:
+            available = shares.list_shares()
+            configured = shares.configured_share_names()
+            home_count = len(shares.list_home_shares())
+        except Exception as exc:
+            debug_logger.exception('Listing shares failed')
+            QMessageBox.critical(self, 'Network shares', 'Could not read the shares from UCS: %s' % (exc,))
+            return
+        dialog = SharesDialog(self, available, configured, home_count)
+        if not dialog.exec_():
+            return
+        try:
+            shares.setup_shares(dialog.selected())
+        except Exception as exc:
+            debug_logger.exception('Share setup failed')
+            QMessageBox.critical(self, 'Network shares', str(exc))
+        else:
+            QMessageBox.information(self, 'Network shares', 'Saved. Shares are mounted at the next login.')
+
     def on_join_finished(self, success: bool, error_message: str) -> None:
         self.join_button.setEnabled(True)
         if self.thread is not None:
             self.thread.quit()
             self.thread.wait()
         if success:
+            self.shares_button.setEnabled(True)
             QMessageBox.information(self, 'Success', 'Domain join successful. Please reboot this machine.')
         else:
             QMessageBox.critical(self, 'Domain join failed', error_message)

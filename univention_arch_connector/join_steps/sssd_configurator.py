@@ -14,7 +14,10 @@
 # on a Debian postinst script. Also sets ldap_id_use_start_tls explicitly:
 # SSSD (2.x, tested) already uses StartTLS for the machine account's
 # password bind and fails rather than falling back to plain LDAP, but this
-# keeps encryption mandatory independent of SSSD's defaults. See
+# keeps encryption mandatory independent of SSSD's defaults. And stores
+# Kerberos tickets at MIT's default location /tmp/krb5cc_<uid> instead of
+# SSSD's randomized name: mounting shares at login (shares.py) runs as root,
+# and cifs.upcall then only looks at the default location. See
 # ../../NOTICE.md.
 
 import logging
@@ -28,6 +31,7 @@ from univention_arch_connector.utils.general import execute_as_root
 userinfo_logger = logging.getLogger('userinfo')
 
 SSSD_CONF = Path('/etc/sssd/sssd.conf')
+CCNAME_TEMPLATE = 'FILE:/tmp/krb5cc_%U'
 
 
 class ConflictChecker:
@@ -92,6 +96,7 @@ class SssdConfigurator(ConflictChecker):
             'krb5_server = %(ldap_server_name)s\n'
             'krb5_kpasswd = %(kpasswd_name)s\n'
             'krb5_realm = %(kerberos_realm)s\n'
+            'krb5_ccname_template = %(ccname_template)s\n'
             'cache_credentials = true\n'
             'enumerate = false\n'
             '\n'
@@ -108,11 +113,30 @@ class SssdConfigurator(ConflictChecker):
                 'ldap_server_name': ldap_server_name,
                 'kpasswd_name': kpasswd_name,
                 'kerberos_realm': kerberos_realm,
+                'ccname_template': CCNAME_TEMPLATE,
             }
         )
         SSSD_CONF.parent.mkdir(parents=True, exist_ok=True)
         SSSD_CONF.write_text(config)
         SSSD_CONF.chmod(0o600)
+
+    @execute_as_root
+    def ensure_default_ccache_location(self) -> None:
+        """Add krb5_ccname_template to an sssd.conf written by an older
+        version of this tool (needed for mounting shares).
+        """
+        lines = SSSD_CONF.read_text().splitlines(keepends=True)
+        if any(line.split('=', 1)[0].strip() == 'krb5_ccname_template' for line in lines):
+            return
+        for i, line in enumerate(lines):
+            if line.split('=', 1)[0].strip() == 'krb5_realm':
+                lines.insert(i + 1, 'krb5_ccname_template = %s\n' % (CCNAME_TEMPLATE,))
+                break
+        else:
+            raise RuntimeError('No krb5_realm line in %s; was this system joined with this tool?' % (SSSD_CONF,))
+        userinfo_logger.info('Storing Kerberos tickets at /tmp/krb5cc_<uid> (%s)', SSSD_CONF)
+        SSSD_CONF.write_text(''.join(lines))
+        subprocess.check_output(['systemctl', 'restart', 'sssd'], stderr=subprocess.STDOUT)
 
     @execute_as_root
     def restart_sssd(self) -> None:

@@ -16,6 +16,9 @@ pkgbase = univention-arch-connector-cli
 	depends = systemd
 	optdepends = ntp: fallback one-shot time sync if chrony is not installed
 	optdepends = networkmanager: DNS backend used when systemd-resolved is not active
+	optdepends = cifs-utils: mounting UCS shares at login (--setup-shares)
+	optdepends = pam_mount: mounting UCS shares at login (--setup-shares)
+	optdepends = keyutils: mounting UCS shares at login (--setup-shares)
 	source = univention-arch-connector-cli-0.1.0.tar.gz::https://github.com/G5K-org/univention-arch-connector/archive/refs/tags/v0.1.0.tar.gz
 	sha256sums = SKIP
 

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from univention_arch_connector.join import check_system, connect_to_dc, resolve_dc_ip, run_join
+from univention_arch_connector import shares
 from univention_arch_connector.leave.leave_domain import leave_domain
 from univention_arch_connector.utils.host_key import pin_host_keys
 
@@ -47,6 +48,13 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
     parser.add_argument('--force-ucs-dns', action='store_true', help="Point this system's DNS configuration at the UCS domain controller")
     parser.add_argument('--skip-login-manager', action='store_true', help="Don't check/configure the login manager for domain logins")
     parser.add_argument('--leave-domain', action='store_true', help='Undo a previous domain join using a backup (see --backup-dir)')
+    parser.add_argument('--list-shares', action='store_true', help='List the file shares defined in UCS (after joining)')
+    parser.add_argument(
+        '--setup-shares', nargs='*', metavar='SHARE',
+        help='Mount these UCS shares at login under %s/<name>, plus each user\'s home share if set in UCS. '
+             'Without names, choose interactively.' % (shares.MOUNT_DIR,),
+    )
+    parser.add_argument('--remove-shares', action='store_true', help='Stop mounting shares at login')
     parser.add_argument('--backup-dir', help='Backup directory to use with --leave-domain (defaults to the most recent one)')
     parser.add_argument('-L', '--logfile', default=DEFAULT_LOGFILE, help='Path to the log file (default: %s)' % (DEFAULT_LOGFILE,))
     return parser.parse_args(argv)
@@ -110,6 +118,39 @@ def confirm_host_key(dc_ip: str, fingerprints: List[str]) -> bool:
     return input('Is this the right domain controller (yes/no)? ').strip().lower() in ('y', 'yes')
 
 
+def choose_shares(available: List[str], configured: List[str]) -> List[str]:
+    if not sys.stdin.isatty():
+        raise RuntimeError('Pass the share names to --setup-shares when not running interactively.')
+    print('Shares in UCS (* = currently set up):')
+    for number, name in enumerate(available, 1):
+        print('  %2d) %s%s' % (number, name, ' *' if name in configured else ''))
+    answer = input("Shares to mount (numbers separated by commas, 'all', or empty for none): ").strip().lower()
+    if answer == 'all':
+        return list(available)
+    chosen = []
+    for part in filter(None, (part.strip() for part in answer.split(','))):
+        if not part.isdigit() or not 1 <= int(part) <= len(available):
+            raise RuntimeError('Invalid choice: %s' % (part,))
+        chosen.append(available[int(part) - 1])
+    return chosen
+
+
+def run_shares_command(args: argparse.Namespace) -> None:
+    if args.remove_shares:
+        shares.remove_shares()
+        return
+    available = shares.list_shares()
+    configured = shares.configured_share_names()
+    if args.list_shares:
+        for share in available:
+            print('%s  //%s/%s%s' % (share.name, share.host, share.name, '  (set up)' if share.name in configured else ''))
+        homes = shares.list_home_shares()
+        print('%d user(s) have a home share in UCS.' % (len(homes),))
+        return
+    names = args.setup_shares or choose_shares([share.name for share in available], configured)
+    shares.setup_shares(names)
+
+
 def main(argv: Optional[list] = None) -> None:
     args = parse_args(argv)
     check_if_run_as_root()
@@ -120,6 +161,9 @@ def main(argv: Optional[list] = None) -> None:
         if args.leave_domain:
             backup_dir = Path(args.backup_dir) if args.backup_dir else None
             leave_domain(backup_dir)
+            return
+        if args.list_shares or args.setup_shares is not None or args.remove_shares:
+            run_shares_command(args)
             return
 
         check_system()
@@ -136,7 +180,12 @@ def main(argv: Optional[list] = None) -> None:
     except SystemExit:
         raise
     except Exception as exc:
-        action = 'Leaving the domain' if args.leave_domain else 'Domain join'
+        if args.leave_domain:
+            action = 'Leaving the domain'
+        elif args.list_shares or args.setup_shares is not None or args.remove_shares:
+            action = 'Share setup'
+        else:
+            action = 'Domain join'
         userinfo_logger.critical('%s failed: %s. See %s for details.', action, str(exc).rstrip('.'), args.logfile)
         debug_logger.exception('%s failed', action)
         sys.exit(1)
