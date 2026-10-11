@@ -56,6 +56,16 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
         help='Mount each domain user\'s network home (as Windows clients get it from UCS) at %s at login. '
              'A re-join without this option keeps the current setting.' % (shares.HOME_MOUNTPOINT,),
     )
+    admin = parser.add_mutually_exclusive_group()
+    admin.add_argument(
+        '--admin-group', metavar='GROUP',
+        help='Give the members of this UCS group administrator rights (sudo, polkit) on this system. Who is a '
+             'member is managed in UCS. A re-join without this option keeps the current setting.',
+    )
+    admin.add_argument(
+        '--no-admin-group', dest='admin_group', action='store_const', const='',
+        help='Stop giving a UCS group administrator rights',
+    )
     parser.add_argument('--list-shares', action='store_true', help='List the file shares defined in UCS (after joining)')
     parser.add_argument(
         '--setup-shares', nargs='*', metavar='SHARE',
@@ -206,7 +216,9 @@ def main(argv: Optional[list] = None) -> None:
         if password is None:
             password = getpass.getpass('Domain administrator password: ')
 
-        joiner = connect_to_dc(dc_ip, username, password, args.skip_login_manager, args.force_ucs_dns, args.mount_home)
+        joiner = connect_to_dc(
+            dc_ip, username, password, args.skip_login_manager, args.force_ucs_dns, args.mount_home, args.admin_group,
+        )
         run_join(joiner, dc_fingerprint)
     except SystemExit:
         raise

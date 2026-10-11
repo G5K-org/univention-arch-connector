@@ -125,6 +125,20 @@ for one test user, a home share (`sambahome`) for step 12.
     - [ ] A re-join without the option keeps it; `--no-mount-home` and
       `--leave-domain` remove it.
 
+## Administrator rights
+
+13. Create a group in UMC (e.g. `linux-admins`) with one test user, and join
+    with `--admin-group linux-admins`.
+    - [ ] The test user can run `sudo -i`; a domain user who isn't a member
+      can't (`sudo -l` lists nothing).
+    - [ ] A KDE admin prompt (e.g. installing in Discover) offers the test
+      user and accepts their password.
+    - [ ] Removing the user from the group in UMC: within about 10 minutes
+      `sudo` refuses, without logging out. Adding them back works the same way.
+    - [ ] A re-join without the option keeps it; `--no-admin-group` and
+      `--leave-domain` remove the sudoers file, the polkit rule and the
+      lines in `/etc/sudo.conf`.
+
 ## GUI
 
 10. Launch via the desktop entry (`univention-arch-connector.desktop`).

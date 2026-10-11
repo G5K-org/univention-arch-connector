@@ -141,6 +141,22 @@ drive (UCS' `samba/homedirserver` and `samba/homedirpath`, e.g.
 The local home directory stays as it is. A re-join keeps the setting;
 `--no-mount-home` turns it off. Needs the same packages as shares.
 
+### Administrator rights
+
+Join with `--admin-group <group>` (GUI: "UCS group with admin (sudo)
+rights") to make the members of a UCS group administrators on this
+computer: full `sudo` rights, and they can confirm KDE/GNOME admin prompts
+(polkit) with their own password. Create the group in UMC (Users > Groups)
+and manage its members there. Adding a user to the group or removing them
+takes effect here within about 10 minutes (the SSSD cache time), also in
+sessions that are already running. Without network access, the cached
+membership still applies. A re-join keeps the setting; `--no-admin-group`
+and `--leave-domain` remove it.
+
+This writes `/etc/sudoers.d/50-univention-arch-connector`, a polkit rule
+that keeps `wheel` as administrators too, and `Set group_source dynamic`
+in `/etc/sudo.conf` (unless `group_source` is already set there).
+
 Run `univention-arch-connector-cli --help` for all options. The graphical
 assistant `univention-arch-connector-gui` (started via the "Univention
 Domain Join" desktop entry and polkit) offers the same options.

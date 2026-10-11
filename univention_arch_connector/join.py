@@ -72,7 +72,7 @@ def resolve_dc_ip(domain: Optional[str], dc_ip: Optional[str]) -> str:
 
 def connect_to_dc(
     dc_ip: str, username: str, password: str, skip_login_manager: bool, force_ucs_dns: bool,
-    mount_home: Optional[bool] = None,
+    mount_home: Optional[bool] = None, admin_group: Optional[str] = None,
 ) -> ArchJoiner:
     if not check_if_ssh_works_with_given_account(dc_ip, username, password):
         raise DomainJoinException(
@@ -80,7 +80,9 @@ def connect_to_dc(
         )
     userinfo_logger.info('Fetching domain configuration from the domain controller')
     ucr_variables = get_ucr_variables_from_dc(dc_ip, username, password)
-    return ArchJoiner(ucr_variables, username, password, dc_ip, skip_login_manager, force_ucs_dns, mount_home)
+    return ArchJoiner(
+        ucr_variables, username, password, dc_ip, skip_login_manager, force_ucs_dns, mount_home, admin_group,
+    )
 
 
 def run_join(joiner: ArchJoiner, dc_fingerprint: Optional[str] = None) -> None:
@@ -122,7 +124,7 @@ def already_joined_notice() -> Optional[str]:
     when = ' on %s' % (info['joined_at'][:10],) if info.get('joined_at') else ''
     return (
         'This computer is already a member of the domain %s (domain controller %s)%s. Joining again updates '
-        'its configuration and keeps the share, home and login screen settings.' % (
+        'its configuration and keeps the share, home, admin group and login screen settings.' % (
             info['domain'] or 'unknown', info['dc_host'] or 'unknown', when,
         )
     )

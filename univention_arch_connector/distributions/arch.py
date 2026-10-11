@@ -17,7 +17,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from univention_arch_connector import shares
+from univention_arch_connector import admin_group, shares
 from univention_arch_connector.distributions import AbstractJoiner, DcResolveException, DomainJoinException
 from univention_arch_connector.join_steps.dns_configurator import DnsConfigurator
 from univention_arch_connector.join_steps.kerberos_configurator import KerberosConfigurator
@@ -118,10 +118,13 @@ class ArchJoiner(AbstractJoiner):
         skip_login_manager: bool,
         force_ucs_dns: bool,
         mount_home: Optional[bool] = None,
+        admin_group: Optional[str] = None,
     ) -> None:
         super().__init__(ucr_variables, admin_username, admin_pw, dc_ip, skip_login_manager, force_ucs_dns)
         # None: keep what a previous join set up.
         self.mount_home = mount_home
+        # None: keep what a previous join set up; '': no admin group.
+        self.admin_group = admin_group
 
         self.domain = ucr_variables['domainname']
         self.nameservers: List[str] = [
@@ -191,6 +194,9 @@ class ArchJoiner(AbstractJoiner):
         self.login_manager_configurator.check_for_conflicts(self.skip_login_manager)
         if self.mount_home:
             shares.check_requirements()
+        if self.admin_group:
+            admin_group.validate_group_name(self.admin_group)
+            admin_group.check_requirements()
 
     @execute_as_root
     def create_backup_of_config_files(self) -> None:
@@ -204,6 +210,7 @@ class ArchJoiner(AbstractJoiner):
         self.login_manager_configurator.backup(self.backup, self.skip_login_manager)
         self.kerberos_configurator.backup(self.backup)
         self.backup.backup_file(str(shares.PAM_MOUNT_CONF))
+        admin_group.backup(self.backup)
         self.backup.write_manifest()
         prune_old_backups()
         userinfo_logger.info('Backup of changed configuration files: %s', self.backup.backup_dir)
@@ -245,6 +252,10 @@ class ArchJoiner(AbstractJoiner):
                 shares.setup_home_mount(self.home_server, self.home_path)
             elif self.mount_home is False:
                 shares.remove_home_mount()
+            if self.admin_group:
+                admin_group.setup(self.admin_group)
+            elif self.admin_group == '':
+                admin_group.remove()
             self.kerberos_configurator.configure_kerberos(
                 self.kerberos_realm, self.ldap_master, self.ldap_server_name, self.is_samba_dc, self.dc_ip,
             )

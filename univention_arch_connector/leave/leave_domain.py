@@ -22,7 +22,8 @@ from typing import Optional
 from univention_arch_connector.join_steps.nsswitch_configurator import NSSWITCH_CONF, NsswitchConfigurator
 from univention_arch_connector.join_steps.pam_configurator import GROUP_CONF, PamConfigurator, SYSTEM_AUTH, SYSTEM_LOGIN
 from univention_arch_connector.join_steps.sssd_configurator import SSSD_CONF
-from univention_arch_connector import join_info, login_users
+from univention_arch_connector import admin_group, join_info, login_users
+from univention_arch_connector.admin_group import SUDO_CONF
 from univention_arch_connector.shares import PAM_MOUNT_CONF, remove_home_mount, remove_shares
 from univention_arch_connector.utils.backup import entries_for_leave, find_latest_backup_dir, load_manifest, restore_file
 from univention_arch_connector.utils.general import execute_as_root
@@ -32,7 +33,7 @@ userinfo_logger = logging.getLogger('userinfo')
 # These are handled by surgical marker removal above rather than a plain
 # restore, since they're shared files other packages/the user may also
 # have edited.
-_MARKER_BASED_PATHS = {str(PAM_MOUNT_CONF), str(SYSTEM_AUTH), str(SYSTEM_LOGIN), str(GROUP_CONF), str(NSSWITCH_CONF)}
+_MARKER_BASED_PATHS = {str(SUDO_CONF), str(PAM_MOUNT_CONF), str(SYSTEM_AUTH), str(SYSTEM_LOGIN), str(GROUP_CONF), str(NSSWITCH_CONF)}
 
 
 @execute_as_root
@@ -65,6 +66,7 @@ def leave_domain(backup_dir: Optional[Path] = None) -> None:
 
     remove_shares()
     remove_home_mount()
+    admin_group.remove()
     login_users.remove()
     join_info.remove()
     PamConfigurator().remove()

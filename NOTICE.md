@@ -23,7 +23,7 @@ Modules that replace Debian/Ubuntu-specific mechanisms with Arch-native
 ones (`join_steps/pam_configurator.py`, `join_steps/nsswitch_configurator.py`,
 `join_steps/login_manager_configurator.py`, `join_steps/dns_configurator.py`,
 `join_steps/time_sync.py`, `distributions/arch.py`), as well as
-`join.py`, `join_info.py`, `shares.py`, `login_users.py`, `utils/host_key.py` and `leave/leave_domain.py`, are new code
+`join.py`, `join_info.py`, `shares.py`, `admin_group.py`, `login_users.py`, `utils/host_key.py` and `leave/leave_domain.py`, are new code
 written for this project and carry this project's own copyright/SPDX headers.
 
 As a derivative work, this entire project is distributed under the same

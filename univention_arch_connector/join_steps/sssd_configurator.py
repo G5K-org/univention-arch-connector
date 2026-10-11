@@ -121,6 +121,9 @@ class SssdConfigurator(ConflictChecker):
             'krb5_realm = %(kerberos_realm)s\n'
             'krb5_ccname_template = %(ccname_template)s\n'
             'cache_credentials = true\n'
+            # How soon group changes in UCS apply here, e.g. --admin-group
+            # (default: 90 minutes). Offline, expired entries are still used.
+            'entry_cache_timeout = 600\n'
             'enumerate = false\n'
             '\n'
             '[nss]\n'

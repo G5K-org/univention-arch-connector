@@ -21,7 +21,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout,
 )
 
-from univention_arch_connector import shares
+from univention_arch_connector import admin_group, shares
 from univention_arch_connector import join_info
 from univention_arch_connector.join import already_joined_notice, check_system, connect_to_dc, resolve_dc_ip, run_join
 from univention_arch_connector import login_users
@@ -67,7 +67,7 @@ class JoinWorker(QObject):
     host_key_confirmation_requested = pyqtSignal(str, list)
 
     def __init__(self, username: str, password: str, domain: str, dc_ip: str, dc_fingerprint: str,
-                 skip_login_manager: bool, force_ucs_dns: bool, mount_home: bool) -> None:
+                 skip_login_manager: bool, force_ucs_dns: bool, mount_home: bool, admin_group: str) -> None:
         super().__init__()
         self.username = username
         self.password = password
@@ -77,6 +77,7 @@ class JoinWorker(QObject):
         self.skip_login_manager = skip_login_manager
         self.force_ucs_dns = force_ucs_dns
         self.mount_home = mount_home
+        self.admin_group = admin_group
         self.host_key_accepted = False
 
     def confirm_host_key(self, dc_ip: str, fingerprints: List[str]) -> bool:
@@ -90,6 +91,7 @@ class JoinWorker(QObject):
             dc_fingerprint = pin_host_keys(dc_ip, self.dc_fingerprint or None, self.confirm_host_key)
             joiner = connect_to_dc(
                 dc_ip, self.username, self.password, self.skip_login_manager, self.force_ucs_dns, self.mount_home,
+                self.admin_group,
             )
             run_join(joiner, dc_fingerprint)
         except Exception as exc:
@@ -159,6 +161,8 @@ class DomainJoinDialog(QDialog):
         self.force_ucs_dns_checkbox = QCheckBox("Point this system's DNS at the domain controller")
         self.mount_home_checkbox = QCheckBox("Mount each user's network home at %s" % (shares.HOME_MOUNTPOINT,))
         self.mount_home_checkbox.setChecked(shares.home_mount_enabled())
+        self.admin_group_edit = QLineEdit(admin_group.configured_group() or '')
+        self.admin_group_edit.setPlaceholderText('e.g. linux-admins - empty: none')
         self.login_list_combo = QComboBox()
         for mode, label in LOGIN_LIST_LABELS.items():
             self.login_list_combo.addItem(label, mode)
@@ -178,6 +182,7 @@ class DomainJoinDialog(QDialog):
         form.addRow(self.skip_login_manager_checkbox)
         form.addRow(self.force_ucs_dns_checkbox)
         form.addRow(self.mount_home_checkbox)
+        form.addRow('UCS group with admin (sudo) rights:', self.admin_group_edit)
         form.addRow('Login screen lists:', self.login_list_combo)
 
         self.log_view = QPlainTextEdit()
@@ -263,6 +268,7 @@ class DomainJoinDialog(QDialog):
             self.skip_login_manager_checkbox.isChecked(),
             self.force_ucs_dns_checkbox.isChecked(),
             self.mount_home_checkbox.isChecked(),
+            self.admin_group_edit.text().strip(),
         )
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
