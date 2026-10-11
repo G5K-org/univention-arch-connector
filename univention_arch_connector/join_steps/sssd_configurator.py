@@ -122,11 +122,15 @@ class SssdConfigurator(ConflictChecker):
             'krb5_ccname_template = %(ccname_template)s\n'
             'cache_credentials = true\n'
             # How soon group changes in UCS apply here, e.g. --admin-group
-            # (default: 90 minutes). Offline, expired entries are still used.
-            'entry_cache_timeout = 600\n'
+            # (default: 90 minutes), together with memcache_timeout below:
+            # at most about 2 minutes. Offline, expired entries are still used.
+            'entry_cache_timeout = 90\n'
             'enumerate = false\n'
             '\n'
             '[nss]\n'
+            # Programs read entries from SSSD's in-memory cache without
+            # asking SSSD for this long (default: 5 minutes).
+            'memcache_timeout = 30\n'
             '\n'
             '[pam]\n'
             % {

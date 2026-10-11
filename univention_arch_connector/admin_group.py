@@ -8,7 +8,7 @@
 # for polkit (KDE/GNOME password prompts) through a rule that keeps the
 # default wheel group. Who is a member is managed in UCS only: adding a user
 # to the group, or removing them, takes effect on this system once SSSD's
-# cache expires (entry_cache_timeout, see sssd_configurator.py): sudo is
+# cache expires (about 2 minutes, see sssd_configurator.py): sudo is
 # set to look up the groups on every call (group_source dynamic in
 # sudo.conf) instead of using those of the login session. See ../NOTICE.md.
 

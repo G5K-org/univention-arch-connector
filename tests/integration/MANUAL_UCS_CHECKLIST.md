@@ -133,7 +133,7 @@ for one test user, a home share (`sambahome`) for step 12.
       can't (`sudo -l` lists nothing).
     - [ ] A KDE admin prompt (e.g. installing in Discover) offers the test
       user and accepts their password.
-    - [ ] Removing the user from the group in UMC: within about 10 minutes
+    - [ ] Removing the user from the group in UMC: within about 2 minutes
       `sudo` refuses, without logging out. Adding them back works the same way.
     - [ ] A re-join without the option keeps it; `--no-admin-group` and
       `--leave-domain` remove the sudoers file, the polkit rule and the

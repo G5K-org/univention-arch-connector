@@ -148,7 +148,7 @@ rights") to make the members of a UCS group administrators on this
 computer: full `sudo` rights, and they can confirm KDE/GNOME admin prompts
 (polkit) with their own password. Create the group in UMC (Users > Groups)
 and manage its members there. Adding a user to the group or removing them
-takes effect here within about 10 minutes (the SSSD cache time), also in
+takes effect here within about 2 minutes (the SSSD cache time), also in
 sessions that are already running. Without network access, the cached
 membership still applies. A re-join keeps the setting; `--no-admin-group`
 and `--leave-domain` remove it.
